@@ -68,10 +68,11 @@ class Settings(HardeningSettings):
             return value
         raise ValueError("must use https (plain http is only allowed for loopback hosts)")
 
-    @field_validator("supabase_jwks_base_url", mode="before")
+    @field_validator("supabase_jwks_base_url", "gemini_api_key", mode="before")
     @classmethod
     def _empty_means_unset(cls, value: object) -> object:
-        return None if value == "" else value
+        """`NAME=` in an env file (as in .env.example) means "not set", not an empty value."""
+        return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def _check_jwks_base_url(self) -> "Settings":

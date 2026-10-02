@@ -152,3 +152,12 @@ async def test_an_answer_cut_off_by_the_token_limit_is_a_triage_model_error() ->
 
     with pytest.raises(TriageModelError, match="cut off"):
         await make_model(models).classify(TICKET, CATEGORIES)
+
+
+def test_an_empty_key_from_the_environment_gives_the_disabled_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://x/y")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    assert isinstance(build_triage_model(Settings(_env_file=None)), DisabledTriageModel)

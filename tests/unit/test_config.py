@@ -243,3 +243,9 @@ def test_the_jwks_base_url_must_be_an_http_or_https_url(
         settings_with(
             monkeypatch, supabase_jwks_base_url=url, supabase_jwks_allow_plain_http="true"
         )
+
+
+@pytest.mark.parametrize("empty", ["", "   "])
+def test_an_empty_gemini_key_means_no_key(monkeypatch: pytest.MonkeyPatch, empty: str) -> None:
+    # `GEMINI_API_KEY=` as in .env.example and the compose file must not become an empty secret.
+    assert settings_with(monkeypatch, gemini_api_key=empty).gemini_api_key is None
