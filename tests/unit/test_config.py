@@ -178,3 +178,15 @@ def test_hardening_settings_load_without_a_database_url(monkeypatch: pytest.Monk
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
     assert HardeningSettings(_env_file=None).rate_limit_enabled is True
+
+
+def test_the_model_output_token_limit_defaults_to_1024_and_must_be_positive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.delenv("AI_MAX_OUTPUT_TOKENS", raising=False)
+    assert Settings(_env_file=None).ai_max_output_tokens == 1024
+
+    monkeypatch.setenv("AI_MAX_OUTPUT_TOKENS", "0")
+    with pytest.raises(ValidationError, match="ai_max_output_tokens"):
+        Settings(_env_file=None)

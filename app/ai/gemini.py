@@ -39,8 +39,11 @@ class _AsyncModels(Protocol):
 
 
 class GeminiTriageModel:
-    def __init__(self, models: _AsyncModels, model: str, timeout_seconds: float) -> None:
+    def __init__(
+        self, models: _AsyncModels, model: str, timeout_seconds: float, max_output_tokens: int
+    ) -> None:
         self._models = models
+        self._max_output_tokens = max_output_tokens
         self.name = model
         self._timeout_ms = int(timeout_seconds * 1000)  # the SDK takes milliseconds
 
@@ -51,6 +54,7 @@ class GeminiTriageModel:
             response_mime_type="application/json",
             response_schema=RESPONSE_SCHEMA,
             temperature=0.2,
+            max_output_tokens=self._max_output_tokens,
             http_options=types.HttpOptions(timeout=self._timeout_ms),
         )
         try:
@@ -60,6 +64,9 @@ class GeminiTriageModel:
         except errors.APIError as exc:
             # Only the status code: the provider's message is not ours to log or store.
             raise TriageModelError(f"gemini api error {exc.code}") from None
+        candidates = response.candidates or []
+        if candidates and candidates[0].finish_reason == types.FinishReason.MAX_TOKENS:
+            raise TriageModelError("gemini answer was cut off by the output token limit")
         text = response.text
         if text is None or not text.strip():
             raise TriageModelError("gemini returned an empty answer")
@@ -72,6 +79,9 @@ def build_triage_model(settings: Settings) -> TriageModel:
         return DisabledTriageModel()
     client = genai.Client(api_key=settings.gemini_api_key.get_secret_value())
     gemini = GeminiTriageModel(
-        client.aio.models, settings.gemini_model, settings.ai_timeout_seconds
+        client.aio.models,
+        settings.gemini_model,
+        settings.ai_timeout_seconds,
+        settings.ai_max_output_tokens,
     )
     return BudgetedTriageModel(gemini, settings.ai_calls_per_minute)

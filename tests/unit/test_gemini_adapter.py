@@ -21,19 +21,31 @@ ANSWER = {
 }
 
 
+class FakeCandidate:
+    def __init__(self, finish_reason: types.FinishReason) -> None:
+        self.finish_reason = finish_reason
+
+
 class FakeResponse:
-    def __init__(self, text: str | None) -> None:
+    def __init__(
+        self, text: str | None, finish_reason: types.FinishReason = types.FinishReason.STOP
+    ) -> None:
         self.text = text
+        self.candidates = [FakeCandidate(finish_reason)]
 
 
 class FakeModels:
     """Stands in for client.aio.models: records the call and returns or raises."""
 
     def __init__(
-        self, text: str | None = json.dumps(ANSWER), error: Exception | None = None
+        self,
+        text: str | None = json.dumps(ANSWER),
+        error: Exception | None = None,
+        finish_reason: types.FinishReason = types.FinishReason.STOP,
     ) -> None:
         self.text = text
         self.error = error
+        self.finish_reason = finish_reason
         self.calls: list[dict[str, Any]] = []
 
     async def generate_content(
@@ -42,11 +54,15 @@ class FakeModels:
         self.calls.append({"model": model, "contents": contents, "config": config})
         if self.error is not None:
             raise self.error
-        return FakeResponse(self.text)
+        return FakeResponse(self.text, self.finish_reason)
 
 
-def make_model(models: FakeModels, timeout: float = 15.0) -> GeminiTriageModel:
-    return GeminiTriageModel(models, model="gemini-test", timeout_seconds=timeout)
+def make_model(
+    models: FakeModels, timeout: float = 15.0, max_output_tokens: int = 1024
+) -> GeminiTriageModel:
+    return GeminiTriageModel(
+        models, model="gemini-test", timeout_seconds=timeout, max_output_tokens=max_output_tokens
+    )
 
 
 async def test_returns_the_model_text_which_passes_output_validation() -> None:
@@ -120,3 +136,19 @@ def test_with_a_key_the_gemini_model_uses_the_configured_name() -> None:
     assert isinstance(model, BudgetedTriageModel)
     assert isinstance(model.inner, GeminiTriageModel)
     assert model.name == "gemini-other"
+
+
+async def test_the_output_token_limit_is_sent_to_the_model() -> None:
+    models = FakeModels()
+
+    await make_model(models, max_output_tokens=777).classify(TICKET, CATEGORIES)
+
+    assert models.calls[0]["config"].max_output_tokens == 777
+
+
+async def test_an_answer_cut_off_by_the_token_limit_is_a_triage_model_error() -> None:
+    cut_off = '{"category_id": 1, "priority": "high", "sentiment": "neg'
+    models = FakeModels(text=cut_off, finish_reason=types.FinishReason.MAX_TOKENS)
+
+    with pytest.raises(TriageModelError, match="cut off"):
+        await make_model(models).classify(TICKET, CATEGORIES)

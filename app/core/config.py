@@ -40,6 +40,7 @@ class Settings(HardeningSettings):
     jwks_min_refetch_seconds: int = Field(default=30, gt=0)
     ai_timeout_seconds: float = Field(default=15.0, gt=0)
     # Global cap on model calls per minute; over it, tickets take the keyword fallback.
+    ai_max_output_tokens: int = Field(default=1024, gt=0)  # a cut-off answer takes the fallback
     ai_calls_per_minute: int = Field(default=60, gt=0)
     # Gemini adapter: without a key, triage always takes the keyword fallback.
     gemini_api_key: SecretStr | None = None
