@@ -129,3 +129,11 @@ These fill in endpoint 11 without adding endpoints or fields.
 - `created_after` is inclusive, `created_before` is exclusive. Both must include a timezone (naive values are 422).
 - `q` is 1 to 200 characters, matched against title and description with PostgreSQL full-text search (`plainto_tsquery`, English configuration), so operators and punctuation are plain text.
 - `sla_breached=true|false` uses the same breach rule as the `sla_breached` field. `total` always reflects all filters.
+
+## Clarifications for Phase 8 hardening (2026-10-02)
+
+No endpoint or field added. Two status codes become real:
+- **429 `rate_limited`** (reserved since Phase 3) with a `Retry-After` header in seconds. Limits are in process (per app instance, reset on restart; no Redis). Per client IP: `/health` and `/ready` share one budget (default 120 per minute), and every `/api/v1` request counts against another (600 per minute) before the token is checked. Per user: `POST /tickets` (10 per minute, each ticket costs a model call) and `POST /tickets/{id}/comments` (30 per minute). Requests that fail validation still count. All numbers are env settings; `RATE_LIMIT_ENABLED=false` turns them off.
+- **413 `payload_too_large`** for request bodies over `MAX_REQUEST_BODY_BYTES` (default 65,536; the largest valid ticket is about 10.3 KB), also for chunked bodies.
+- Every response carries `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` and `Referrer-Policy: no-referrer`; all except `/docs` and `/redoc` also carry `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`.
+- `/docs`, `/redoc` and `/openapi.json` follow `API_DOCS_ENABLED` (default true; the local production setup in Phase 9 should turn it off).

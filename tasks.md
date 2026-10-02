@@ -201,6 +201,6 @@ No Redis (locked), so rate limits are in process (per app instance) and reset on
 Rate-limit numbers are env settings with defaults (PRD: numbers are decided in this phase).
 
 - [x] P8.1 Rate limiter (fixed window, bounded memory, injectable clock): per client IP on the public routes (`/health`, `/ready`) and on all `/api/v1` requests before any token or database work; per authenticated user on ticket creation (each ticket costs a paid model call) and on comment creation. 429 in the shared error format with `Retry-After`; an env flag turns it off.
-- [ ] P8.2 Request body size limit (413, also for chunked bodies), response security headers (`nosniff`, `no-store`, `frame-ancestors 'none'`; not on the interactive docs), env flag for the interactive docs and OpenAPI.
+- [x] P8.2 Request body size limit (413, also for chunked bodies), response security headers (`nosniff`, `no-store`, `frame-ancestors 'none'`; not on the interactive docs), env flag for the interactive docs and OpenAPI.
 - [ ] P8.3 OWASP API Security Top 10 (2023) review: independent pass by the security-auditor persona, findings fixed or accepted, written up in `docs/security-review-owasp-api.md` with the test that backs each control.
 - [ ] P8.4 `make audit` clean and CI audit step confirmed; phase close: checks, five-axis review, progress, PR, CI green, merge.

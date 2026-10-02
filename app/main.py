@@ -9,9 +9,10 @@ from app.ai.recovery import TriageRecovery, run_periodically
 from app.api.deps import ensure_database, ensure_triage_runner
 from app.api.routers import health
 from app.api.v1 import api_v1
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_hardening_settings, get_settings
 from app.core.db import Database
 from app.core.errors import register_error_handlers
+from app.core.hardening import BodyLimitMiddleware, SecurityHeadersMiddleware
 from app.core.jwt_auth import JwtTokenVerifier
 from app.core.logging import RequestIdMiddleware, configure_logging
 from app.core.security import TokenVerifier
@@ -53,7 +54,15 @@ def create_app(
     token_verifier: TokenVerifier | None = None,
     triage_model: TriageModel | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="TriageDesk API", lifespan=lifespan)
+    hardening = settings or get_hardening_settings()
+    docs = hardening.api_docs_enabled
+    app = FastAPI(
+        title="TriageDesk API",
+        lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
     app.state.settings = settings
     app.state.database = None
     app.state.token_verifier = token_verifier
@@ -62,6 +71,8 @@ def create_app(
     app.state.recovery_task = None
     app.state.rate_limits = None
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(BodyLimitMiddleware, max_bytes=hardening.max_request_body_bytes)
+    app.add_middleware(SecurityHeadersMiddleware)
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(api_v1)
