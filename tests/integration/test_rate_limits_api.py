@@ -184,3 +184,71 @@ async def test_a_refused_request_never_reaches_authentication_failures_in_the_er
     assert refused.status_code == 429
     assert "secret-token" not in refused.text
     assert "WWW-Authenticate" not in refused.headers
+
+
+# --- coverage of the whole /api/v1 surface (audit M1) ----------------------------------------
+
+
+async def test_unknown_paths_and_wrong_methods_under_api_v1_are_limited_too(
+    make_client: ClientFactory,
+) -> None:
+    async with make_client(rate_limit_api_per_minute=3) as (client, _):
+        unknown = [(await client.get("/api/v1/nope")).status_code for _ in range(3)]
+        refused_unknown = await client.get("/api/v1/nope")
+    async with make_client(rate_limit_api_per_minute=3) as (client, _):
+        wrong_method = [(await client.delete(TICKETS)).status_code for _ in range(3)]
+        refused_method = await client.delete(TICKETS)
+
+    assert unknown == [404, 404, 404]
+    assert wrong_method == [405, 405, 405]
+    assert refused_unknown.status_code == refused_method.status_code == 429
+
+
+async def test_requests_with_a_bad_body_and_no_token_are_limited_too(
+    make_client: ClientFactory,
+) -> None:
+    async with make_client(rate_limit_api_per_minute=3) as (client, verifier):
+        sent = [(await client.post(TICKETS, content=b"{not json")).status_code for _ in range(3)]
+        refused = await client.post(TICKETS, content=b"{not json")
+
+    assert sent == [401, 401, 401]  # no token: refused before the body is looked at
+    assert refused.status_code == 429
+    assert verifier.calls == 0
+
+
+async def test_a_refused_request_still_carries_a_request_id_and_the_security_headers(
+    make_client: ClientFactory,
+) -> None:
+    async with make_client(rate_limit_api_per_minute=1) as (client, _):
+        await client.get("/api/v1/me")
+        refused = await client.get("/api/v1/me", headers={"X-Request-ID": "abc-123"})
+
+    assert refused.status_code == 429
+    assert refused.headers["X-Request-ID"] == "abc-123"
+    assert refused.headers["X-Content-Type-Options"] == "nosniff"
+
+
+async def test_a_ipv6_client_is_limited_per_slash_64_not_per_address(
+    fresh_database_url: str,
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        database_url=SecretStr(fresh_database_url),
+        ai_recovery_enabled=False,
+        rate_limit_public_per_minute=2,
+    )
+    app = create_app(settings)
+    addresses = ["2001:db8:1:2::1", "2001:db8:1:2:ffff:ffff:ffff:ffff", "2001:db8:1:3::1"]
+    results = []
+    for address in addresses:
+        transport = httpx2.ASGITransport(app=app, client=(address, 1234))
+        async with httpx2.AsyncClient(transport=transport, base_url="http://test") as client:
+            results.append([(await client.get("/health")).status_code for _ in range(2)])
+    transport = httpx2.ASGITransport(app=app, client=("2001:db8:1:2::99", 1))
+    async with httpx2.AsyncClient(transport=transport, base_url="http://test") as client:
+        same_64 = await client.get("/health")
+
+    assert results[0] == [200, 200]
+    assert results[1] == [429, 429]  # same /64 as the first address: shared budget
+    assert results[2] == [200, 200]  # a different /64
+    assert same_64.status_code == 429

@@ -96,3 +96,15 @@ def test_a_flood_of_distinct_live_keys_cannot_grow_memory_without_bound() -> Non
 def test_invalid_settings_are_rejected(limit: int, window: float) -> None:
     with pytest.raises(ValueError, match="must be positive"):
         RateLimiter(limit, window)
+
+
+def test_eviction_when_full_does_not_rebuild_the_table_and_drops_the_oldest_first() -> None:
+    limiter, clock = make(limit=1, window=60, max_keys=3)
+    for name in ("a", "b", "c"):
+        limiter.check(name)
+        clock.now += 1
+
+    limiter.check("d")  # table full of live keys: the oldest ("a") goes
+
+    assert limiter.check("b") is not None  # still tracked and limited
+    assert limiter.check("a") is None  # forgotten, starts a fresh window

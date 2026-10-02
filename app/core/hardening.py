@@ -1,9 +1,13 @@
 """Request body size limit and response security headers (pure ASGI middleware)."""
 
 import json
+from collections.abc import Callable
 
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.core.errors import error_response
+from app.core.rate_limit import RateLimits, client_key
 
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -14,6 +18,9 @@ STRICT_CSP = "default-src 'none'; frame-ancestors 'none'"
 # The interactive docs load their own scripts, so the strict policy would break them.
 CSP_EXEMPT_PATHS = {"/docs", "/redoc"}
 
+PUBLIC_PATHS = {"/health", "/ready"}
+API_PREFIX = "/api/v1"
+
 _TOO_LARGE_BODY = json.dumps(
     {"error": {"code": "payload_too_large", "message": "Request body is too large"}}
 ).encode()
@@ -21,6 +28,48 @@ _TOO_LARGE_BODY = json.dumps(
 
 class _BodyTooLargeError(Exception):
     pass
+
+
+def _is_over(content_length: str, max_bytes: int) -> bool:
+    """True for a plain ASCII number above the limit (str.isdigit also accepts such as '²')."""
+    return content_length.isascii() and content_length.isdigit() and int(content_length) > max_bytes
+
+
+class RateLimitMiddleware:
+    """Per-client-IP limits, applied before routing, authentication or reading any body.
+
+    `/health` and `/ready` share the public budget; everything under `/api/v1` (matched or not)
+    shares the API budget. Per-user create limits live in the route dependencies.
+    """
+
+    def __init__(self, app: ASGIApp, get_limits: Callable[[], RateLimits]) -> None:
+        self.app = app
+        self._get_limits = get_limits
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path: str = scope["path"]
+        limits = self._get_limits()
+        limiter = None
+        if path in PUBLIC_PATHS:
+            limiter = limits.public
+        elif path == API_PREFIX or path.startswith(API_PREFIX + "/"):
+            limiter = limits.api
+        if limits.enabled and limiter is not None:
+            client = scope.get("client")
+            retry_after = limiter.check(client_key(client[0] if client else None))
+            if retry_after is not None:
+                response = error_response(
+                    429,
+                    "rate_limited",
+                    "Too many requests. Try again later.",
+                    {"Retry-After": str(retry_after)},
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 class SecurityHeadersMiddleware:
@@ -57,7 +106,12 @@ class BodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
         declared = MutableHeaders(scope=scope).get("content-length")
-        if declared is not None and declared.isdigit() and int(declared) > self.max_bytes:
+        if (
+            declared is not None
+            and declared.isascii()
+            and declared.isdigit()
+            and int(declared) > self.max_bytes
+        ):
             await self._refuse(send)
             return
 
@@ -85,7 +139,11 @@ class BodyLimitMiddleware:
                 return  # swallow whatever the app tried to send instead
             await send(message)
 
-        await self.app(scope, counting_receive, guarded_send)
+        try:
+            await self.app(scope, counting_receive, guarded_send)
+        except _BodyTooLargeError:
+            if not response_started:
+                await self._refuse(send)
 
     @staticmethod
     async def _refuse(send: Send) -> None:

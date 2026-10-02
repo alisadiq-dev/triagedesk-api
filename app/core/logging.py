@@ -40,7 +40,13 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, default=str)
 
 
+# Their INFO lines print request URLs (the JWKS URL, the model endpoint); nothing there is useful.
+_QUIET_LOGGERS = ("httpx", "httpx2", "httpcore", "google_genai")
+
+
 def configure_logging(level: int = logging.INFO) -> None:
+    for name in _QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
     root = logging.getLogger()
     if any(isinstance(handler.formatter, JsonFormatter) for handler in root.handlers):
         return

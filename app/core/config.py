@@ -20,7 +20,7 @@ class HardeningSettings(BaseSettings):
     rate_limit_ticket_create_per_minute: int = Field(default=10, gt=0)
     rate_limit_comment_per_minute: int = Field(default=30, gt=0)
     max_request_body_bytes: int = Field(default=65_536, gt=0)
-    api_docs_enabled: bool = True
+    api_docs_enabled: bool = False  # on for local development (make run), off everywhere else
 
 
 class Settings(HardeningSettings):
@@ -39,6 +39,8 @@ class Settings(HardeningSettings):
     jwks_cache_seconds: int = Field(default=300, gt=0)
     jwks_min_refetch_seconds: int = Field(default=30, gt=0)
     ai_timeout_seconds: float = Field(default=15.0, gt=0)
+    # Global cap on model calls per minute; over it, tickets take the keyword fallback.
+    ai_calls_per_minute: int = Field(default=60, gt=0)
     # Gemini adapter: without a key, triage always takes the keyword fallback.
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
@@ -47,6 +49,7 @@ class Settings(HardeningSettings):
     ai_recovery_interval_seconds: int = Field(default=60, gt=0)
     ai_recovery_age_seconds: int = Field(default=120, gt=0)
     ai_recovery_batch_size: int = Field(default=10, gt=0)
+    ai_recovery_max_attempts: int = Field(default=3, gt=0)  # then a ticket is left alone
 
     @field_validator("supabase_url")
     @classmethod

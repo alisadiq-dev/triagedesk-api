@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from sqlalchemy import text
 
-from app.api.deps import get_database, limit_public
+from app.api.deps import get_database
 from app.core.errors import AppError
 
-router = APIRouter(tags=["health"], dependencies=[Depends(limit_public)])
+router = APIRouter(tags=["health"])
 
 
 class NotReady(AppError):

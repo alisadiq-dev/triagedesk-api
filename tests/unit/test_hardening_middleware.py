@@ -1,11 +1,13 @@
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, MutableMapping
+from typing import Any
 
 import httpx2
 import pytest
 from pydantic import SecretStr
 
 from app.core.config import Settings
-from app.core.hardening import STRICT_CSP
+from app.core.hardening import STRICT_CSP, BodyLimitMiddleware
 from app.main import create_app
 
 URL = "postgresql+asyncpg://user:pw@localhost:5432/triagedesk"
@@ -89,7 +91,7 @@ async def test_error_responses_from_the_limiter_and_size_check_also_carry_them()
 
 
 async def test_the_interactive_docs_keep_working_without_the_strict_csp() -> None:
-    async with make_client() as client:
+    async with make_client(api_docs_enabled=True) as client:
         docs = await client.get("/docs")
 
     assert docs.status_code == 200
@@ -109,8 +111,53 @@ async def test_the_docs_and_openapi_can_be_switched_off(path: str) -> None:
     assert response.json()["error"]["code"] == "not_found"
 
 
-async def test_the_openapi_document_is_served_by_default() -> None:
-    async with make_client() as client:
+async def test_the_openapi_document_is_served_when_the_docs_are_enabled() -> None:
+    async with make_client(api_docs_enabled=True) as client:
         response = await client.get("/openapi.json")
 
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+async def test_the_docs_and_openapi_are_off_by_default(path: str) -> None:
+    async with make_client() as client:
+        response = await client.get(path)
+
+    assert response.status_code == 404
+
+
+async def test_a_non_ascii_digit_content_length_is_not_a_500() -> None:
+    sent: list[MutableMapping[str, Any]] = []
+    reached = False
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        nonlocal reached
+        reached = True
+
+    async def receive() -> MutableMapping[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: MutableMapping[str, Any]) -> None:
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "path": "/x",
+        "headers": [(b"content-length", "\u00b2".encode())],  # superscript two: isdigit() is True
+    }
+
+    await BodyLimitMiddleware(app, max_bytes=100)(scope, receive, send)
+
+    assert reached  # not treated as a size, so it falls through to the server's own parsing
+    assert sent == []
+
+
+async def test_an_oversized_chunked_body_does_not_log_an_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async with make_client(max_request_body_bytes=2048) as client:
+        with caplog.at_level(logging.WARNING):
+            response = await client.post("/api/v1/tickets", content=chunks(10_000))
+
+    assert response.status_code == 413
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []

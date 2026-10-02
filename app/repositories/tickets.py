@@ -98,13 +98,15 @@ class TicketRepository:
         """Load a ticket without any visibility rule (for resolving a lost race)."""
         return await self._session.get(Ticket, ticket_id, populate_existing=True)
 
-    async def stale_pending_ids(self, created_before: datetime, limit: int) -> list[uuid.UUID]:
+    async def stale_pending_ids(
+        self, created_before: datetime, limit: int, exclude: set[uuid.UUID] | None = None
+    ) -> list[uuid.UUID]:
         """Tickets whose triage never finished, oldest first (for the recovery sweeper)."""
+        conditions = [Ticket.ai_status == AiStatus.PENDING, Ticket.created_at < created_before]
+        if exclude:
+            conditions.append(Ticket.id.not_in(exclude))
         query = (
-            select(Ticket.id)
-            .where(Ticket.ai_status == AiStatus.PENDING, Ticket.created_at < created_before)
-            .order_by(Ticket.created_at, Ticket.id)
-            .limit(limit)
+            select(Ticket.id).where(*conditions).order_by(Ticket.created_at, Ticket.id).limit(limit)
         )
         return list(await self._session.scalars(query))
 

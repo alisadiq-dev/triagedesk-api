@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime, timedelta
 
@@ -9,7 +10,7 @@ from sqlalchemy import update
 
 from app.ai.interface import TriageModel
 from app.ai.recovery import RecoveryResult, TriageRecovery, run_periodically
-from app.ai.triage import TriageRunner
+from app.ai.triage import Outcome, TriageRunner
 from app.core.config import Settings
 from app.core.db import Database
 from app.main import create_app
@@ -30,12 +31,14 @@ def minutes_ago(minutes: float) -> datetime:
 async def make_recovery(fresh_database_url: str) -> AsyncIterator[RecoveryFactory]:
     databases: list[Database] = []
 
-    def build(model: TriageModel, age_seconds: int = 120, batch_size: int = 10) -> TriageRecovery:
+    def build(
+        model: TriageModel, age_seconds: int = 120, batch_size: int = 10, max_attempts: int = 3
+    ) -> TriageRecovery:
         settings = Settings(_env_file=None, database_url=SecretStr(fresh_database_url))
         database = Database(settings)
         databases.append(database)
         runner = TriageRunner(database, model, timeout_seconds=2.0)
-        return TriageRecovery(database, runner, age_seconds, batch_size)
+        return TriageRecovery(database, runner, age_seconds, batch_size, max_attempts)
 
     yield build
     for database in databases:
@@ -179,6 +182,46 @@ async def test_a_sweep_that_finds_nothing_still_logs_its_line(
 
     records = [r for r in caplog.records if r.getMessage() == "triage_recovery"]
     assert [(r.__dict__["found"], r.__dict__["recovered"]) for r in records] == [(0, 0)]
+
+
+class StorageFailsFor:
+    """A runner that behaves like the real one, except that it cannot store one ticket's result."""
+
+    def __init__(self, real: TriageRunner, stuck_id: uuid.UUID) -> None:
+        self._real = real
+        self._stuck_id = stuck_id
+
+    async def run(self, ticket_id: uuid.UUID) -> Outcome:
+        if ticket_id == self._stuck_id:
+            return Outcome.FAILED
+        return await self._real.run(ticket_id)
+
+
+async def test_a_ticket_whose_result_cannot_be_stored_is_given_up_after_max_attempts(
+    world: World, fresh_database_url: str
+) -> None:
+    stuck = await make_ticket(world.session, world.ids["customer"], created_at=minutes_ago(30))
+    healthy = await make_ticket(world.session, world.ids["customer"], created_at=minutes_ago(10))
+    stuck_id, healthy_id = stuck.id, healthy.id
+    settings = Settings(_env_file=None, database_url=SecretStr(fresh_database_url))
+    database = Database(settings)
+    try:
+        real = TriageRunner(database, ScriptedModel(good_answer(None)), timeout_seconds=2.0)
+        recovery = TriageRecovery(
+            database, StorageFailsFor(real, stuck_id), 120, batch_size=1, max_attempts=2
+        )
+
+        first, second = await recovery.sweep(), await recovery.sweep()
+        third = (
+            await recovery.sweep()
+        )  # the stuck ticket is excluded: the healthy one gets its turn
+    finally:
+        await database.dispose()
+
+    assert (first.recovered, second.recovered) == (0, 0)
+    assert third == RecoveryResult(found=1, recovered=1)
+    assert await status_of(world, stuck_id) == AiStatus.PENDING
+    assert await status_of(world, healthy_id) == AiStatus.COMPLETED
 
 
 # --- the periodic loop ---------------------------------------------------------------------

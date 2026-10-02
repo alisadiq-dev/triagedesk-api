@@ -151,7 +151,7 @@ def test_hardening_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.rate_limit_ticket_create_per_minute == 10
     assert settings.rate_limit_comment_per_minute == 30
     assert settings.max_request_body_bytes == 65_536
-    assert settings.api_docs_enabled is True
+    assert settings.api_docs_enabled is False
 
 
 @pytest.mark.parametrize(

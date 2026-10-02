@@ -6,6 +6,7 @@ from typing import Protocol
 from google import genai
 from google.genai import errors, types
 
+from app.ai.budget import BudgetedTriageModel
 from app.ai.interface import (
     CategoryOption,
     DisabledTriageModel,
@@ -70,4 +71,7 @@ def build_triage_model(settings: Settings) -> TriageModel:
     if settings.gemini_api_key is None:
         return DisabledTriageModel()
     client = genai.Client(api_key=settings.gemini_api_key.get_secret_value())
-    return GeminiTriageModel(client.aio.models, settings.gemini_model, settings.ai_timeout_seconds)
+    gemini = GeminiTriageModel(
+        client.aio.models, settings.gemini_model, settings.ai_timeout_seconds
+    )
+    return BudgetedTriageModel(gemini, settings.ai_calls_per_minute)
