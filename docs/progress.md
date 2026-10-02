@@ -415,3 +415,22 @@ and answered as documented.
 - The README badge URL until the workflow runs on the default branch.
 - Nothing was started in the real `triagedesk-prod` project; the demo users exist in the local Supabase stack and in the git-ignored
   `supabase/demo_users.json`.
+
+## Follow-up: first real Gemini triage in the production stack (2026-10-02)
+
+The first demo ticket on the real stack (with `GEMINI_API_KEY` in the prod env file) took the fallback: `ai_status = failed`, reason
+`model_error`, 74 ms after the ticket was created, the first model call of a freshly recreated app container. The log only said
+`model_error`, so the cause was invisible.
+
+- **Log line:** `triage_outcome` now carries `error_type` (exception class name) and `status_code` (HTTP status of a provider error), never a
+  message. `TriageModelError` keeps the wrapped provider error's class and status. Tests: type only for a plain exception (a message holding a
+  fake key and ticket text never appears), a status number, the wrapped Gemini error, timeout, and nothing for invalid output or success.
+- **Hypothesis "the call used a far too short timeout" was checked and is not supported.** In the real image, the app's own wiring
+  (`create_app` plus `ensure_triage_runner`) and the manual path both pass `timeout=15000` ms to the SDK's `HttpOptions`, which the SDK sends
+  as 15.0 s connect, read, write and pool on the wire (plus an `x-server-timeout` header). Identical in both paths: model
+  `gemini-3.5-flash-lite`, `maxOutputTokens` 1024, temperature 0.2, JSON mime type, a system instruction, no tools, no SDK retry options,
+  the same request path, the same call budget (60 per minute). Both calls succeeded from a fresh process in the container.
+- Not explained yet: why the app's first call failed. It is not reproducible from a fresh process, so the next real failure will say why.
+
+Incident: while introspecting the SDK client I printed its HTTP options, which include the `x-goog-api-key` header, so the Gemini key
+appeared in this session's output. Rotate that key. The diagnostic scripts now print header names only.
