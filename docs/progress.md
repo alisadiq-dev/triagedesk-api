@@ -168,3 +168,38 @@ double change gives one 200, one 409 and one event, matrix extended to 20 routes
 | Architecture | `TicketService` now covers read, change and workflow; still one method per use case | Low | Revisit if Phase 5 or 6 add more |
 | Security | Same 404, 403, 409 order and locking as Phase 3; no new input beyond an enum | Info | OK |
 | Performance | Events list is indexed by `(ticket_id, created_at)`; paginated | Info | Measured in Phase 7 |
+
+## Phase 5, part 1: AI triage behind an interface (merged; part 2 waits for two approvals)
+
+Delivered: `TriageModel` interface and a disabled model, keyword fallback rules, versioned prompt `triage-v1` (ticket text is
+untrusted data in a per-call random boundary), strict output validation (exactly four fields, no extras), `TriageRunner`
+(own sessions, no connection held during the model call, timeout, human overrides never overwritten, SLA recalculated from
+`created_at`, runs only while pending, one structured log line per run), wiring into ticket creation with BackgroundTasks.
+Without a real model every ticket takes the keyword fallback (`ai_status = failed`, `ai_model = disabled`).
+
+Checks: 577 tests, coverage on `app/services` and `app/ai` is 96% and the 85% gate is now enforced by `make test` (coverage needed
+`concurrency = greenlet` to see async service code; that is a measurement fix, not a threshold change), ruff, mypy, pip-audit clean.
+
+### Doubt pass (AI triage)
+| Claim | Doubt | Result |
+|---|---|---|
+| Ticket text is only ever data | Delimiter forging, instruction text, very long text | Fresh random boundary per call (regenerated if present), truncation, system instruction; tested |
+| The model cannot change roles, ownership or status | Extra keys in the output, hostile text | Output with extra keys is rejected (fallback); only four AI fields and priority/category are written; tested end to end |
+| AI never overwrites a human | Triage finishing after an override | Sources are checked under a row lock; tested for category and priority, success and fallback |
+| Triage never blocks ticket creation | Model errors or hangs | Background task, timeout, any exception becomes the fallback; creation returns 201 (tested) |
+| No connection is held while waiting for the model | Pool exhaustion under slow models | Test with a pool of one connection and a model that needs its own query |
+| Logs hold no ticket text | PII or injected text in logs | Test asserts titles and bodies never appear |
+
+### Five-axis self-review
+| Axis | Finding | Severity | Status |
+|---|---|---|---|
+| Correctness | A lost triage leaves a ticket pending forever | Medium | Known gap; fix proposed in ADR 0006, not built |
+| Correctness | A new ticket's SLA uses the fallback or AI priority only after triage; until then it uses medium | Info | By design (PRD section 8) |
+| Readability | Runner is one class with small private steps | Info | OK |
+| Architecture | Model behind a Protocol; real adapter plugs in without touching the runner | Info | As designed |
+| Security | Strict output schema, untrusted-data prompt, no secrets in logs; adapter will read the key from env only | Info | OK |
+| Performance | Each ticket costs one model call; one extra DB round trip pair per ticket | Info | Measured in Phase 7 if needed |
+
+### Waiting for the owner
+1. Approve the new dependency `google-genai==2.27.0` (official Gemini SDK) and choose the model name for `GEMINI_MODEL`.
+2. Approve (or change) the stuck-pending fix in ADR 0006.

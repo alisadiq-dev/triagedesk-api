@@ -167,11 +167,11 @@ Builds endpoints 1 to 13, 15 to 17, 20 and 21. TDD per slice; permissions in the
 Stop points inside this phase: the Gemini SDK is a new dependency (owner approval), and the fix for stuck `ai_status = pending` is
 proposed but not built until approved.
 
-- [ ] P5.1 Keyword fallback priority rules (pure function, tested).
-- [ ] P5.2 Prompt builder (`app/ai/prompts.py`, versioned): ticket text is delimited untrusted data with a per-call boundary; tests for delimiter-forging and truncation.
-- [ ] P5.3 Output validation (Pydantic, extra fields forbidden, category must be an active id): valid, extra keys, bad enums, bad types, too long, not JSON.
-- [ ] P5.4 `TriageModel` interface and `TriageRunner`: own sessions (no DB connection held during the model call), timeout, success path, fallback path (keyword priority, `ai_status = failed`, category and sentiment stay null), model name and prompt version stored, human overrides never overwritten, SLA recalculated from `created_at`, skip when not pending, one structured log line per run (outcome, latency, model).
-- [ ] P5.5 Wire into ticket creation with FastAPI BackgroundTasks; default model is a disabled one (fallback) until a real adapter is approved; staff see AI fields, customers never do.
-- [ ] P5.6 Prompt-injection tests: hostile ticket text and hostile model output can only ever change the allowed AI fields, never roles, assignee, status or permissions.
+- [x] P5.1 Keyword fallback priority rules (pure function, tested).
+- [x] P5.2 Prompt builder (`app/ai/prompts.py`, versioned): ticket text is delimited untrusted data with a per-call boundary; tests for delimiter-forging and truncation.
+- [x] P5.3 Output validation (Pydantic, extra fields forbidden, category must be an active id): valid, extra keys, bad enums, bad types, too long, not JSON.
+- [x] P5.4 `TriageModel` interface and `TriageRunner`: own sessions (no DB connection held during the model call), timeout, success path, fallback path (keyword priority, `ai_status = failed`, category and sentiment stay null), model name and prompt version stored, human overrides never overwritten, SLA recalculated from `created_at`, skip when not pending, one structured log line per run (outcome, latency, model).
+- [x] P5.5 Wire into ticket creation with FastAPI BackgroundTasks; default model is a disabled one (fallback) until a real adapter is approved; staff see AI fields, customers never do.
+- [x] P5.6 Prompt-injection tests: hostile ticket text and hostile model output can only ever change the allowed AI fields, never roles, assignee, status or permissions.
 - [ ] P5.7 Gemini adapter (after the SDK dependency is approved) and docs check of the SDK.
-- [ ] P5.8 Propose the stuck-pending fix and wait for approval before building it.
+- [x] P5.8 Stuck-pending fix proposed in docs/adr/0006-recover-stuck-pending-triage.md (NOT built; waiting for approval).
