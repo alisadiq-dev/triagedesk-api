@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import Database
+from app.core.jwt_auth import build_verifier
 from app.core.security import AuthenticatedUser, AuthenticationError, TokenVerifier
 from app.models.enums import Role
 from app.services.permissions import Actor, require_role
@@ -31,10 +32,12 @@ async def get_session(
         yield session
 
 
-def get_token_verifier(request: Request) -> TokenVerifier:
-    verifier: TokenVerifier | None = request.app.state.token_verifier
-    if verifier is None:
-        raise RuntimeError("No token verifier is configured")
+async def get_token_verifier(request: Request) -> TokenVerifier:
+    """Build the real JWT verifier lazily (no network happens until a token needs checking)."""
+    app_state = request.app.state
+    if app_state.token_verifier is None:
+        app_state.token_verifier = build_verifier(app_state.settings or get_settings())
+    verifier: TokenVerifier = app_state.token_verifier
     return verifier
 
 
@@ -43,7 +46,7 @@ async def get_current_user(
     verifier: Annotated[TokenVerifier, Depends(get_token_verifier)],
 ) -> AuthenticatedUser:
     if credentials is None:
-        raise AuthenticationError("Missing bearer token")
+        raise AuthenticationError()
     return await verifier.verify(credentials.credentials)
 
 

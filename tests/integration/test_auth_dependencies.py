@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_actor, require_roles
 from app.core.config import Settings
-from app.core.security import AuthenticatedUser, AuthenticationError
+from app.core.jwt_auth import JwtTokenVerifier
+from app.core.security import AuthenticatedUser, AuthenticationError, AuthServiceUnavailableError
 from app.main import create_app
 from app.models import Profile
 from app.models.enums import Role
@@ -29,7 +30,7 @@ TOKENS = {
 class FakeVerifier:
     async def verify(self, token: str) -> AuthenticatedUser:
         if token not in TOKENS:
-            raise AuthenticationError("Invalid token")
+            raise AuthenticationError()
         return TOKENS[token]
 
 
@@ -139,3 +140,85 @@ async def test_first_request_from_an_unknown_user_creates_a_customer_profile(
     created = await session.scalar(select(Profile).where(Profile.id == NEW_USER_ID))
     assert created is not None
     assert created.email == "new@example.com"
+
+
+class CountingVerifier:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def verify(self, token: str) -> AuthenticatedUser:
+        self.calls += 1
+        raise AuthenticationError
+
+
+async def test_missing_token_gets_401_before_any_key_or_database_work() -> None:
+    verifier = CountingVerifier()
+    unreachable = Settings(
+        _env_file=None, database_url=SecretStr("postgresql+asyncpg://u:p@127.0.0.1:1/none")
+    )
+    app = create_app(unreachable, token_verifier=verifier)
+
+    @app.get("/test/whoami")
+    async def whoami(actor: Annotated[Actor, Depends(get_actor)]) -> dict[str, str]:
+        return {"id": str(actor.id)}
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://test"
+    ) as http_client:
+        response = await http_client.get("/test/whoami")
+
+    assert response.status_code == 401
+    assert verifier.calls == 0
+    assert app.state.database is None
+
+
+async def test_missing_and_invalid_tokens_get_the_identical_401_body(
+    client: httpx2.AsyncClient,
+) -> None:
+    missing = await client.get("/test/whoami")
+    invalid = await client.get("/test/whoami", headers=bearer("not-a-known-token"))
+
+    assert missing.status_code == invalid.status_code == 401
+    assert missing.json() == invalid.json()
+
+
+async def test_an_unavailable_key_service_is_a_503_in_the_error_format() -> None:
+    class Unavailable:
+        async def verify(self, token: str) -> AuthenticatedUser:
+            raise AuthServiceUnavailableError
+
+    app = create_app(token_verifier=Unavailable())
+
+    @app.get("/test/whoami")
+    async def whoami(actor: Annotated[Actor, Depends(get_actor)]) -> dict[str, str]:
+        return {"id": str(actor.id)}
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://test"
+    ) as http_client:
+        response = await http_client.get("/test/whoami", headers=bearer("anything"))
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error": {"code": "auth_unavailable", "message": "Authentication service unavailable"}
+    }
+
+
+async def test_without_an_injected_verifier_the_real_one_is_built_from_settings(
+    fresh_database_url: str,
+) -> None:
+    settings = Settings(_env_file=None, database_url=SecretStr(fresh_database_url))
+    app = create_app(settings)
+
+    @app.get("/test/whoami")
+    async def whoami(actor: Annotated[Actor, Depends(get_actor)]) -> dict[str, str]:
+        return {"id": str(actor.id)}
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://test"
+    ) as http_client:
+        response = await http_client.get("/test/whoami", headers=bearer("not.a.jwt"))
+
+    assert response.status_code == 401
+    assert isinstance(app.state.token_verifier, JwtTokenVerifier)
+    await app.state.token_verifier.aclose()

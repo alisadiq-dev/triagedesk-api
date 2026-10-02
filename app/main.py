@@ -7,6 +7,7 @@ from app.api.routers import health
 from app.core.config import Settings
 from app.core.db import Database
 from app.core.errors import register_error_handlers
+from app.core.jwt_auth import JwtTokenVerifier
 from app.core.security import TokenVerifier
 
 
@@ -16,6 +17,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     database: Database | None = app.state.database
     if database is not None:
         await database.dispose()
+    verifier = app.state.token_verifier
+    if isinstance(verifier, JwtTokenVerifier):
+        await verifier.aclose()
 
 
 def create_app(

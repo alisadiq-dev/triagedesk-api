@@ -6,11 +6,27 @@ from app.core.errors import AppError
 
 
 class AuthenticationError(AppError):
-    """401: no token, or a token that is invalid, expired or not meant for this API."""
+    """401: no token, or a token that is invalid, expired or not meant for this API.
+
+    The body is always identical so callers cannot tell why a token was rejected.
+    """
 
     status_code = 401
     code = "unauthorized"
     headers = {"WWW-Authenticate": "Bearer"}
+
+    def __init__(self) -> None:
+        super().__init__("Invalid or missing credentials")
+
+
+class AuthServiceUnavailableError(AppError):
+    """503: tokens cannot be checked right now (signing keys unreachable). Fails closed."""
+
+    status_code = 503
+    code = "auth_unavailable"
+
+    def __init__(self) -> None:
+        super().__init__("Authentication service unavailable")
 
 
 @dataclass(frozen=True)
