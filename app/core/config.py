@@ -1,8 +1,11 @@
 import uuid
 from functools import lru_cache
+from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 class Settings(BaseSettings):
@@ -22,6 +25,17 @@ class Settings(BaseSettings):
     jwks_timeout_seconds: float = Field(default=3.0, gt=0)
     jwks_cache_seconds: int = Field(default=300, gt=0)
     jwks_min_refetch_seconds: int = Field(default=30, gt=0)
+
+    @field_validator("supabase_url")
+    @classmethod
+    def _require_https_unless_loopback(cls, value: str) -> str:
+        """Signing keys fetched over plain http could be swapped by a man in the middle."""
+        parsed = urlparse(value)
+        if parsed.scheme == "https" or (
+            parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS
+        ):
+            return value
+        raise ValueError("must use https (plain http is only allowed for loopback hosts)")
 
 
 @lru_cache

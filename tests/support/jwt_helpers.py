@@ -61,3 +61,15 @@ def forge_hs256(payload: dict[str, Any], secret: bytes, *, kid: str = KID) -> st
     body = _b64(json.dumps(payload).encode())
     signature = hmac.new(secret, f"{header}.{body}".encode(), hashlib.sha256).digest()
     return f"{header}.{body}.{_b64(signature)}"
+
+
+class StaticKeys:
+    """A key provider backed by an in-memory dict, for tests that do not need HTTP."""
+
+    def __init__(self, **keys: ec.EllipticCurvePublicKey) -> None:
+        self.keys = keys
+        self.lookups: list[str] = []
+
+    async def get_key(self, kid: str) -> ec.EllipticCurvePublicKey | None:
+        self.lookups.append(kid)
+        return self.keys.get(kid)

@@ -50,3 +50,28 @@ def test_pool_size_must_be_positive(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValidationError, match="db_pool_size"):
         Settings(_env_file=None)
+
+
+@pytest.mark.parametrize(
+    "url", ["http://127.0.0.1:54321", "http://localhost:54321", "https://abc.supabase.co"]
+)
+def test_supabase_url_allows_https_or_loopback_http(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("SUPABASE_URL", url)
+
+    assert Settings(_env_file=None).supabase_url == url
+
+
+@pytest.mark.parametrize(
+    "url", ["http://auth.example.com", "ftp://127.0.0.1", "127.0.0.1:54321", "http://10.0.0.5"]
+)
+def test_supabase_url_rejects_plain_http_to_remote_hosts(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("SUPABASE_URL", url)
+
+    with pytest.raises(ValidationError, match="supabase_url"):
+        Settings(_env_file=None)

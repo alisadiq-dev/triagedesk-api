@@ -1,12 +1,14 @@
 import asyncio
 import uuid
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.security import AuthenticatedUser
 from app.models import Profile
 from app.models.enums import Role
+from app.repositories.profiles import ProfileRepository
 from app.services.profiles import ProfileService
 
 
@@ -58,3 +60,19 @@ async def test_two_concurrent_first_requests_create_exactly_one_profile(
     assert {profile.id for profile in results} == {user.id}
     async with factory() as session:
         assert await session.scalar(select(func.count()).select_from(Profile)) == 1
+
+
+async def test_an_existing_profile_is_read_without_any_write(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = AuthenticatedUser(id=uuid.uuid4(), email=None)
+    await ProfileService(session).ensure_profile(user)
+
+    async def forbidden_insert(*args: object, **kwargs: object) -> None:
+        raise AssertionError("existing users must not trigger an insert")
+
+    monkeypatch.setattr(ProfileRepository, "insert_if_absent", forbidden_insert)
+
+    profile = await ProfileService(session).ensure_profile(user)
+
+    assert profile.id == user.id

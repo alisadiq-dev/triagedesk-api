@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from collections.abc import Callable
 
 import httpx2
@@ -199,3 +200,59 @@ async def test_the_endpoint_is_retried_once_the_backoff_has_passed() -> None:
     await keys.get_key("any")
 
     assert endpoint.calls == 2
+
+
+async def test_redirects_are_not_followed() -> None:
+    def redirect(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(302, headers={"Location": "http://evil.example/jwks.json"})
+
+    keys = JwksProvider(
+        URL,
+        timeout_seconds=1,
+        cache_seconds=300,
+        min_refetch_seconds=30,
+        transport=httpx2.MockTransport(redirect),
+    )
+
+    with pytest.raises(JwksUnavailableError):
+        await keys.get_key(KID)
+
+
+async def test_an_oversized_response_is_rejected() -> None:
+    endpoint, clock = Endpoint(), Clock()
+    endpoint.body = json.dumps(endpoint.body).encode() + b" " * (200 * 1024)
+
+    with pytest.raises(JwksUnavailableError):
+        await provider(endpoint, clock).get_key(KID)
+
+
+async def test_private_other_curve_and_non_signing_keys_are_ignored() -> None:
+    endpoint, clock = Endpoint(), Clock()
+    leaked = new_key()
+    private_entry = {**public_jwk(leaked, kid="private"), "d": "AAAA"}
+    p384 = {**public_jwk(new_key(), kid="p384"), "crv": "P-384"}
+    encryption_only = public_jwk(new_key(), kid="enc", use="enc")
+    endpoint.body = jwks_document(
+        public_jwk(new_key(), kid="good"), private_entry, p384, encryption_only
+    )
+    keys = provider(endpoint, clock)
+
+    assert await keys.get_key("good") is not None
+    for kid in ("private", "p384", "enc"):
+        assert await keys.get_key(kid) is None
+
+
+async def test_an_outage_is_logged_once_not_once_per_request(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    endpoint, clock = Endpoint(), Clock()
+    endpoint.status = 500
+    keys = provider(endpoint, clock)
+
+    with caplog.at_level(logging.WARNING, logger="app.auth"):
+        for _ in range(5):
+            with pytest.raises(JwksUnavailableError):
+                await keys.get_key(KID)
+
+    assert caplog.text.count("jwks_unavailable") == 1
+    assert "status 500" in caplog.text

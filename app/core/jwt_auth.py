@@ -18,6 +18,8 @@ from app.core.security import AuthenticatedUser, AuthenticationError, AuthServic
 logger = logging.getLogger("app.auth")
 
 ALGORITHM = "ES256"
+MAX_JWKS_BYTES = 64 * 1024
+LEEWAY_SECONDS = 10  # tolerated clock skew between the issuer and this API
 REQUIRED_CLAIMS = ["exp", "sub", "iss", "aud"]
 
 
@@ -53,7 +55,9 @@ class JwksProvider:
         self._cache_seconds = cache_seconds
         self._min_refetch_seconds = min_refetch_seconds
         self._clock = clock
-        self._client = httpx2.AsyncClient(timeout=timeout_seconds, transport=transport)
+        self._client = httpx2.AsyncClient(
+            timeout=timeout_seconds, transport=transport, follow_redirects=False
+        )
         self._keys: dict[str, ec.EllipticCurvePublicKey] = {}
         self._fetched_at: float | None = None
         self._failed_at: float | None = None
@@ -96,8 +100,9 @@ class JwksProvider:
     async def _refresh(self) -> None:
         try:
             keys = await self._fetch()
-        except JwksUnavailableError:
+        except JwksUnavailableError as exc:
             self._failed_at = self._clock()
+            logger.warning("jwks_unavailable reason=%s", exc)  # once per real failure
             raise
         self._keys = keys
         self._fetched_at = self._clock()
@@ -105,13 +110,18 @@ class JwksProvider:
 
     async def _fetch(self) -> dict[str, ec.EllipticCurvePublicKey]:
         try:
-            response = await self._client.get(self._url)
+            async with self._client.stream("GET", self._url) as response:
+                if response.status_code != 200:
+                    raise JwksUnavailableError(f"jwks fetch failed: status {response.status_code}")
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > MAX_JWKS_BYTES:
+                        raise JwksUnavailableError("jwks response is too large")
         except httpx2.HTTPError as exc:
             raise JwksUnavailableError(f"jwks fetch failed: {type(exc).__name__}") from exc
-        if response.status_code != 200:
-            raise JwksUnavailableError(f"jwks fetch failed: status {response.status_code}")
         try:
-            document = response.json()
+            document = json.loads(body)
         except ValueError as exc:
             raise JwksUnavailableError("jwks response is not valid JSON") from exc
         entries = document.get("keys") if isinstance(document, dict) else None
@@ -138,6 +148,7 @@ def _parse_signing_key(entry: Any) -> tuple[str, ec.EllipticCurvePublicKey] | No
         entry.get("kty") == "EC"
         and entry.get("crv") == "P-256"
         and entry.get("alg") in (None, ALGORITHM)
+        and entry.get("use") in (None, "sig")
         and "d" not in entry
     )
     if not acceptable:
@@ -160,7 +171,6 @@ class JwtTokenVerifier:
         try:
             key = await self._keys.get_key(kid)
         except JwksUnavailableError as exc:
-            logger.warning("jwks_unavailable reason=%s", exc)
             raise AuthServiceUnavailableError from exc
         if key is None:
             raise AuthenticationError
@@ -172,6 +182,7 @@ class JwtTokenVerifier:
                 audience=self._audience,
                 issuer=self._issuer,
                 options={"require": REQUIRED_CLAIMS},
+                leeway=LEEWAY_SECONDS,
             )
         except jwt.PyJWTError:
             raise AuthenticationError from None

@@ -1,4 +1,4 @@
-import logging
+import time
 import uuid
 from typing import Any
 
@@ -14,6 +14,7 @@ from tests.support.jwt_helpers import (
     ISSUER,
     KID,
     USER_ID,
+    StaticKeys,
     claims,
     forge_hs256,
     new_key,
@@ -21,16 +22,6 @@ from tests.support.jwt_helpers import (
 )
 
 KEY = new_key()
-
-
-class StaticKeys:
-    def __init__(self, **keys: ec.EllipticCurvePublicKey) -> None:
-        self.keys = keys
-        self.lookups: list[str] = []
-
-    async def get_key(self, kid: str) -> ec.EllipticCurvePublicKey | None:
-        self.lookups.append(kid)
-        return self.keys.get(kid)
 
 
 class BrokenKeys:
@@ -86,6 +77,18 @@ def invalid_tokens() -> dict[str, str]:
         "anonymous-as-string": sign(KEY, claims(is_anonymous="false")),
         "hs256-with-public-key-as-secret": forge_hs256(claims(), pem),
         "alg-none": jwt.encode(claims(), "", algorithm="none", headers={"kid": KID}),
+        "not-before-in-the-future": sign(KEY, claims(nbf=int(time.time()) + 3600)),
+        "issued-far-in-the-future": sign(KEY, claims(iat=int(time.time()) + 3600)),
+        "audience-list-without-ours": sign(KEY, claims(aud=["someone-else", "another"])),
+        "empty-audience": sign(KEY, claims(aud="")),
+        "empty-sub": sign(KEY, claims(sub="")),
+        "anonymous-null": sign(KEY, claims(is_anonymous=0)),
+        "es384-header": jwt.encode(
+            claims(),
+            ec.generate_private_key(ec.SECP384R1()),
+            algorithm="ES384",
+            headers={"kid": KID},
+        ),
         "garbage": "not.a.jwt",
         "empty": "",
     }
@@ -116,18 +119,24 @@ async def test_wrong_algorithm_is_rejected_before_any_key_lookup() -> None:
     assert keys.lookups == []
 
 
-async def test_unreachable_jwks_is_a_503_not_a_401_and_is_logged_without_the_token(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    token = sign(KEY, claims())
-
-    with (
-        caplog.at_level(logging.WARNING, logger="app.auth"),
-        pytest.raises(AuthServiceUnavailableError) as caught,
-    ):
-        await verifier(BrokenKeys()).verify(token)
+async def test_unreachable_jwks_is_a_503_not_a_401() -> None:
+    with pytest.raises(AuthServiceUnavailableError) as caught:
+        await verifier(BrokenKeys()).verify(sign(KEY, claims()))
 
     assert caught.value.status_code == 503
     assert caught.value.code == "auth_unavailable"
-    assert "jwks_unavailable" in caplog.text
-    assert token not in caplog.text
+    assert caught.value.headers["Retry-After"]
+
+
+async def test_small_clock_skew_between_issuer_and_api_is_tolerated() -> None:
+    soon = int(time.time()) + 5
+
+    user = await verifier().verify(sign(KEY, claims(iat=soon, nbf=soon)))
+
+    assert user.id == uuid.UUID(USER_ID)
+
+
+async def test_audience_list_containing_ours_is_accepted() -> None:
+    user = await verifier().verify(sign(KEY, claims(aud=[AUDIENCE, "another"])))
+
+    assert user.id == uuid.UUID(USER_ID)

@@ -24,6 +24,7 @@ class AuthServiceUnavailableError(AppError):
 
     status_code = 503
     code = "auth_unavailable"
+    headers = {"Retry-After": "30"}
 
     def __init__(self) -> None:
         super().__init__("Authentication service unavailable")

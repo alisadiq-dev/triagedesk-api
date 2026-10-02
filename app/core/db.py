@@ -17,6 +17,7 @@ def build_engine(settings: Settings) -> AsyncEngine:
         pool_timeout=settings.db_pool_timeout_seconds,
         pool_recycle=settings.db_pool_recycle_seconds,
         pool_pre_ping=True,
+        hide_parameters=True,  # keep personal data out of error messages and logs
         connect_args={"timeout": settings.db_pool_timeout_seconds},
     )
 

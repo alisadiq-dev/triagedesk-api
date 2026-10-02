@@ -17,7 +17,10 @@ from app.main import create_app
 from app.models import Profile
 from app.models.enums import Role
 from app.services.permissions import Actor
+from tests.support import jwt_helpers
+from tests.support.jwt_helpers import StaticKeys
 
+SIGNING_KEY = jwt_helpers.new_key()
 CUSTOMER_ID, AGENT_ID, ADMIN_ID, NEW_USER_ID = (uuid.uuid4() for _ in range(4))
 TOKENS = {
     "customer-token": AuthenticatedUser(CUSTOMER_ID, "c@example.com"),
@@ -222,3 +225,84 @@ async def test_without_an_injected_verifier_the_real_one_is_built_from_settings(
     assert response.status_code == 401
     assert isinstance(app.state.token_verifier, JwtTokenVerifier)
     await app.state.token_verifier.aclose()
+
+
+@pytest.fixture
+async def real_client(
+    fresh_database_url: str, session: AsyncSession
+) -> AsyncIterator[httpx2.AsyncClient]:
+    """The app wired with the real JwtTokenVerifier and a local test key (no mocks of the logic)."""
+    session.add(Profile(id=uuid.UUID(jwt_helpers.USER_ID), role=Role.CUSTOMER))
+    await session.commit()
+    settings = Settings(_env_file=None, database_url=SecretStr(fresh_database_url))
+    verifier = JwtTokenVerifier(
+        StaticKeys(**{jwt_helpers.KID: SIGNING_KEY.public_key()}),
+        issuer=jwt_helpers.ISSUER,
+        audience=jwt_helpers.AUDIENCE,
+    )
+    app = create_app(settings, token_verifier=verifier)
+
+    @app.get("/test/whoami")
+    async def whoami(actor: Annotated[Actor, Depends(get_actor)]) -> dict[str, str]:
+        return {"id": str(actor.id), "role": actor.role}
+
+    @app.get("/test/admin")
+    async def admin(actor: Annotated[Actor, Depends(require_roles(Role.ADMIN))]) -> dict[str, str]:
+        return {"role": actor.role}
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://test"
+    ) as http_client:
+        yield http_client
+    if app.state.database is not None:
+        await app.state.database.dispose()
+
+
+async def test_a_role_claim_in_the_token_never_grants_privileges(
+    real_client: httpx2.AsyncClient,
+) -> None:
+    token = jwt_helpers.sign(
+        SIGNING_KEY, jwt_helpers.claims(role="admin", app_metadata={"role": "admin"})
+    )
+
+    whoami = await real_client.get("/test/whoami", headers=bearer(token))
+    admin_only = await real_client.get("/test/admin", headers=bearer(token))
+
+    assert whoami.json()["role"] == "customer"
+    assert admin_only.status_code == 403
+
+
+async def test_a_real_signed_token_for_a_new_user_creates_a_customer_profile(
+    real_client: httpx2.AsyncClient,
+) -> None:
+    new_id = str(uuid.uuid4())
+    token = jwt_helpers.sign(SIGNING_KEY, jwt_helpers.claims(sub=new_id))
+
+    response = await real_client.get("/test/whoami", headers=bearer(token))
+
+    assert response.json() == {"id": new_id, "role": "customer"}
+
+
+async def test_every_kind_of_bad_token_gets_a_byte_identical_401_over_http(
+    real_client: httpx2.AsyncClient,
+) -> None:
+    good = jwt_helpers.sign(SIGNING_KEY, jwt_helpers.claims())
+    tampered = good[:-4] + ("AAAA" if not good.endswith("AAAA") else "BBBB")
+    bad_headers = [
+        {},
+        bearer(jwt_helpers.sign(SIGNING_KEY, jwt_helpers.claims(exp=1))),
+        bearer(jwt_helpers.sign(SIGNING_KEY, jwt_helpers.claims(aud="other"))),
+        bearer(jwt_helpers.sign(SIGNING_KEY, jwt_helpers.claims(iss="http://evil.example"))),
+        bearer(jwt_helpers.sign(SIGNING_KEY, jwt_helpers.claims(is_anonymous=True))),
+        bearer(jwt_helpers.sign(jwt_helpers.new_key(), jwt_helpers.claims())),
+        bearer(tampered),
+        bearer("not.a.jwt"),
+        {"Authorization": "Basic abc"},
+    ]
+
+    responses = [await real_client.get("/test/whoami", headers=h) for h in bad_headers]
+
+    fingerprints = {
+        (r.status_code, r.content, r.headers.get("www-authenticate")) for r in responses
+    }
+    assert fingerprints == {(401, responses[0].content, "Bearer")}
