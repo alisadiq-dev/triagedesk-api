@@ -190,3 +190,56 @@ def test_the_model_output_token_limit_defaults_to_1024_and_must_be_positive(
     monkeypatch.setenv("AI_MAX_OUTPUT_TOKENS", "0")
     with pytest.raises(ValidationError, match="ai_max_output_tokens"):
         Settings(_env_file=None)
+
+
+# --- JWKS fetch address override (local production setup: the API runs in a container) --------
+
+
+def settings_with(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    for name, value in env.items():
+        monkeypatch.setenv(name.upper(), value)
+    return Settings(_env_file=None)
+
+
+def test_the_jwks_base_url_is_unset_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SUPABASE_JWKS_BASE_URL", raising=False)
+
+    assert settings_with(monkeypatch).supabase_jwks_base_url is None
+
+
+def test_an_empty_jwks_base_url_as_in_env_example_means_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert settings_with(monkeypatch, supabase_jwks_base_url="").supabase_jwks_base_url is None
+
+
+@pytest.mark.parametrize("url", ["https://auth.example.com", "http://127.0.0.1:54321"])
+def test_the_jwks_base_url_allows_https_or_loopback_http(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    assert settings_with(monkeypatch, supabase_jwks_base_url=url).supabase_jwks_base_url == url
+
+
+@pytest.mark.parametrize("url", ["http://host.docker.internal:54321", "http://10.0.0.5:8000"])
+def test_plain_http_to_another_host_is_refused_unless_explicitly_allowed(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    with pytest.raises(ValidationError, match="supabase_jwks_base_url"):
+        settings_with(monkeypatch, supabase_jwks_base_url=url)
+
+    allowed = settings_with(
+        monkeypatch, supabase_jwks_base_url=url, supabase_jwks_allow_plain_http="true"
+    )
+
+    assert allowed.supabase_jwks_base_url == url
+
+
+@pytest.mark.parametrize("url", ["ftp://host", "host:54321", "http://"])
+def test_the_jwks_base_url_must_be_an_http_or_https_url(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    with pytest.raises(ValidationError, match="supabase_jwks_base_url"):
+        settings_with(
+            monkeypatch, supabase_jwks_base_url=url, supabase_jwks_allow_plain_http="true"
+        )
