@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+      - id: check-yaml
+      - id: end-of-file-fixer
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: .venv/bin/mypy
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: constraints-no-suppressions-or-env-files
+        name: no suppressions, no .env files (CONSTRAINTS.md)
+        entry: .venv/bin/python scripts/check_suppressions.py
+        language: system

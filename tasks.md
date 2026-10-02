@@ -1,6 +1,6 @@
 # tasks.md
 
-Status: Phase 0 DRAFT, awaiting approval. Each task is a thin vertical slice: failing test, implement, verify, commit.
+Status: Phase 0 done (T0.1 to T0.9). Task lists no longer need approval. Each task is a thin vertical slice: failing test, implement, verify, commit.
 One commit per task, Conventional Commits, about 100 lines per change. Work happens on branch `phase-0-setup`.
 A task is done only when CI is green on GitHub (from T0.9 on; before that, local checks only, and the phase is not done until CI is green).
 

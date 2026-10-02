@@ -1,6 +1,6 @@
 # CONSTRAINTS.md
 
-Status: PROPOSED, awaiting approval. Thresholds can be raised but never lowered without the owner's explicit approval.
+Status: APPROVED (2026-10-02, owner moved to the no-stop workflow without changes). Thresholds can be raised but never lowered without the owner's explicit approval.
 
 | # | Constraint | Threshold | Cheapest place | Backstop |
 |---|---|---|---|---|
