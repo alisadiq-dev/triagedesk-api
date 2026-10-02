@@ -122,5 +122,5 @@ Data model approved 2026-10-02 (see `docs/data-model.md`). Carried to Phase 3: t
 - Acceptance: CI green on GitHub with the new step.
 - Depends on: P1.5
 
-### Phase 1 close
+### Phase 1 close (done)
 All checks, five-axis review, simplification pass, update `docs/progress.md`, open PR, wait for CI green, merge, sync main.
