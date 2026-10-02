@@ -7,6 +7,7 @@ from app.api.routers import health
 from app.core.config import Settings
 from app.core.db import Database
 from app.core.errors import register_error_handlers
+from app.core.security import TokenVerifier
 
 
 @asynccontextmanager
@@ -17,10 +18,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await database.dispose()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, token_verifier: TokenVerifier | None = None
+) -> FastAPI:
     app = FastAPI(title="TriageDesk API", lifespan=lifespan)
     app.state.settings = settings
     app.state.database = None
+    app.state.token_verifier = token_verifier
     register_error_handlers(app)
     app.include_router(health.router)
     return app
