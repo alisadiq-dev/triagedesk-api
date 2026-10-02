@@ -22,8 +22,7 @@ Checks: 22 tests, 98% coverage, ruff and mypy clean, pip-audit clean, CI green o
 Simplification pass: removed the unused test helper and the `assert`-based handlers (replaced by typed decorators).
 
 ### Not verified yet
-- Behaviour of asyncpg and SQLAlchemy through the Supabase session pooler (needs the Supabase project; live check later).
-- `make run` and the Docker image were checked locally only; no deployed environment exists yet.
+- `make run` and the Docker image were checked locally only; there is no deployed environment (local-only project, ADR 0005).
 
 ### Notes
 - Port 5433 on the dev machine is used by a local Postgres, so the test DB uses 55432.
@@ -52,7 +51,6 @@ Checks: 64 tests, ruff and mypy clean, pip-audit clean, CI green on GitHub.
 Simplification pass: no behavior changes needed; removed the obsolete zero-revision migration test.
 
 ### Not verified yet
-- Migrations and seed against the Supabase database (project not created yet).
 - Phase 7 baseline for EXPLAIN ANALYZE needs a copy of the schema without the indexes; it will be built on a throwaway database.
 
 ### Carried forward

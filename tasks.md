@@ -29,7 +29,7 @@ A task is done only when CI is green on GitHub (from T0.9 on; before that, local
 - Do: `app/core/db.py` async engine and session with an explicit pool config (size, overflow, timeout, pre-ping, recycle), configurable by env. `GET /ready` runs `SELECT 1`; returns 200, or 503 in the error format when the DB is unreachable.
 - Acceptance: integration test against real PostgreSQL in Docker: 200 when up; 503 when the DB URL is wrong; pool settings are applied (asserted on the engine).
 - Source check: SQLAlchemy async and asyncpg docs read first; doc URL in the commit body.
-- Live check (later, in a separate approved step): behaviour through the Supabase session pooler. Not verified in Phase 0 unless you provide a Supabase project; I will state exactly what is unverified.
+- Plan change (2026-10-02): the database is the local Docker Postgres 17, so no Supabase pooler check is needed.
 - Depends on: T0.3, T0.6 (test Postgres)
 - Verify: `docker compose up -d test-db && pytest tests/integration/test_ready.py`
 
@@ -66,6 +66,11 @@ A task is done only when CI is green on GitHub (from T0.9 on; before that, local
 
 ### Phase 0 close
 Full tests and checks, five-axis self-review with severity labels, one simplification pass, update `docs/progress.md`, short summary and file list, then STOP for your review.
+
+## Plan change (2026-10-02): local only
+- No cloud deployment and no hosted Supabase project (ADR 0005). Auth tokens come from the local Supabase stack (`supabase start`, ES256 signing keys); tests use a local test key and a faked JWKS.
+- The app database is the local Docker Postgres 17 for development, tests and the local production setup.
+- Phase 9 becomes "local production setup": `docker-compose.prod.yml` (app, Nginx reverse proxy, Postgres), non-root containers, `/ready` and a smoke test against the Nginx URL, `docs/runbook.md` for start, stop, backup and restore. No SSH deploy job, no server hardening, no Let's Encrypt.
 
 ## Answers recorded (2026-10-02)
 

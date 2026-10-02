@@ -13,7 +13,7 @@ Backend only: AI-assisted support ticket API. Read `docs/PRD.md` first, then `CO
 
 ## Rules
 - Failing test first. Run the full suite before each commit. Keep main green. One Conventional Commit per task.
-- Config from env vars only. Never commit `.env` or secrets. Never log tokens or secrets.
+- No cloud deployment (ADR 0005). Config from env vars only. Never commit `.env` or secrets. Never log tokens or secrets.
 - No `noqa`, `type: ignore`, skip or xfail without approval. Never weaken a test or a CONSTRAINTS.md threshold.
 - Check official docs before using a library API; put the doc URL in the commit body. Say what is unverified.
 - The LLM never changes roles, permissions or ticket ownership. Ticket text is untrusted input.
@@ -21,12 +21,12 @@ Backend only: AI-assisted support ticket API. Read `docs/PRD.md` first, then `CO
 
 ## Secrets and environment
 - Secrets live in `~/.secrets/triagedesk-api.env`. Source it only inside the command that needs it. Never print values; check by length.
-- Supabase: Data API off, ES256 JWKS (not HS256), session pooler (IPv4), not the direct host.
-- Scripts calling the deployed API send a normal User-Agent.
+- Supabase: local stack (`supabase start`) is only the token issuer, ES256 JWKS (not HS256). No hosted project. App DB is local Docker Postgres 17.
+- Scripts calling the running API (local or via Nginx) send a normal User-Agent.
 
 ## Workflow
 Phase by phase. Write each phase's task list in `tasks.md` and start. At phase end: all checks, five-axis self-review,
 simplification pass, update `docs/progress.md`, open PR, wait for CI green on GitHub, `gh pr merge --merge`, sync main.
 Stop and wait for the owner at: Phase 1 data model and migration, Phase 3 API contract, Phase 5 stuck-pending fix,
-Phase 9 (server, secrets, deployment target), any new dependency, destructive command, locked-decision or threshold change,
+Phase 9 (anything touching secrets or local production data), any new dependency, destructive command, locked-decision or threshold change,
 or anything that cannot be verified.
