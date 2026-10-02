@@ -389,3 +389,29 @@ the real `triagedesk-prod` project (not started by me); Docker Desktop is the on
 | Architecture | The Nginx address is fixed (a subnet in the compose file) so the app can trust exactly one proxy | Info | Env-configurable for a second project |
 | Security | Plain http between the API container and the Supabase stack on the host, behind an explicit allow flag, local only (ADR 0005) | Low | Accepted |
 | Performance | One worker, per-instance limits | Info | Documented, by decision |
+
+## Phase 10: Documentation and demo (done)
+
+Delivered: `README.md` (what it is, quick start, running it like production, API table, the rate-limit and one-worker rule, quality gates,
+known limitations including L4, repository map), `docs/architecture.md` (six Mermaid diagrams: context, inside the app, authentication,
+ticket creation and triage, status workflow, deployment), ADRs 0007 to 0010 (in-process rate limiting, the AI trust boundary and cost controls
+with L4 accepted, the local production topology, signups off with demo users), `docs/curl-collection.md` (all 21 endpoints in order, plus
+things that fail on purpose), `scripts/demo_env.sh`, and `scripts/demo.py`.
+
+`scripts/demo.py` is exercised by an integration test against the in-process app (full run, no tokens in the output, the optional 429 step
+creates no tickets, a drifting API stops it with a clear error), so it cannot silently drift from the API.
+
+Checks: 772 tests, coverage 96% on `app/services` and `app/ai`, ruff, mypy, pip-audit clean, no forbidden suppressions, no secrets,
+keys, dumps or demo files tracked by git.
+
+### Verified
+Against a throwaway production-style stack (own volume, port and subnet; removed afterwards): `scripts/demo.py --rate-limit` ran to the end
+through Nginx with the real demo users (nine 422s then 429s, no ticket created by the burst); every block of the curl collection ran in order
+and answered as documented.
+
+### Not verified
+- The Mermaid diagrams were not rendered here (GitHub renders them); their content was checked by hand against the code.
+- The Gemini model inside the container (the throwaway stack had no key, so the demo shows the keyword fallback and no AI draft).
+- The README badge URL until the workflow runs on the default branch.
+- Nothing was started in the real `triagedesk-prod` project; the demo users exist in the local Supabase stack and in the git-ignored
+  `supabase/demo_users.json`.
