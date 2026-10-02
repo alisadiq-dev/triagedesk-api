@@ -47,7 +47,9 @@ def test_database_url() -> str:
 
 @pytest.fixture
 def settings(test_database_url: str) -> Settings:
-    return Settings(_env_file=None, database_url=SecretStr(test_database_url))
+    return Settings(
+        _env_file=None, database_url=SecretStr(test_database_url), ai_recovery_enabled=False
+    )
 
 
 @pytest.fixture
@@ -90,7 +92,9 @@ async def world(fresh_database_url: str, session: AsyncSession) -> AsyncIterator
         session.add(Profile(id=IDS[name], email=f"{name}@example.com", role=Role(role)))
     await session.commit()
     await seed(session, bootstrap_admin_sub=None)
-    settings = Settings(_env_file=None, database_url=SecretStr(fresh_database_url))
+    settings = Settings(
+        _env_file=None, database_url=SecretStr(fresh_database_url), ai_recovery_enabled=False
+    )
     app = create_app(settings, token_verifier=NameTokenVerifier())
     async with httpx2.AsyncClient(
         transport=httpx2.ASGITransport(app=app), base_url="http://test"

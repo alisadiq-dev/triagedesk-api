@@ -1,10 +1,11 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ColumnElement, exists, func, select, update
+from sqlalchemy import ColumnElement, exists, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Profile, Ticket
-from app.models.enums import TicketStatus
+from app.models.enums import AiStatus, TicketStatus
 from app.schemas.tickets import TicketSort
 
 _SORT_COLUMNS = {
@@ -69,6 +70,25 @@ class TicketRepository:
     async def get_plain(self, ticket_id: uuid.UUID) -> Ticket | None:
         """Load a ticket without any visibility rule (for resolving a lost race)."""
         return await self._session.get(Ticket, ticket_id, populate_existing=True)
+
+    async def stale_pending_ids(self, created_before: datetime, limit: int) -> list[uuid.UUID]:
+        """Tickets whose triage never finished, oldest first (for the recovery sweeper)."""
+        query = (
+            select(Ticket.id)
+            .where(Ticket.ai_status == AiStatus.PENDING, Ticket.created_at < created_before)
+            .order_by(Ticket.created_at, Ticket.id)
+            .limit(limit)
+        )
+        return list(await self._session.scalars(query))
+
+    async def try_triage_lock(self, ticket_id: uuid.UUID) -> bool:
+        """Session-level advisory lock; must be released on the same connection."""
+        query = text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))")
+        return bool(await self._session.scalar(query, {"key": f"triage:{ticket_id}"}))
+
+    async def release_triage_lock(self, ticket_id: uuid.UUID) -> None:
+        query = text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))")
+        await self._session.execute(query, {"key": f"triage:{ticket_id}"})
 
     async def claim(self, ticket_id: uuid.UUID, assignee_id: uuid.UUID) -> bool:
         """Atomic: only succeeds while the ticket is unassigned and not closed."""

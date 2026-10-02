@@ -173,5 +173,6 @@ proposed but not built until approved.
 - [x] P5.4 `TriageModel` interface and `TriageRunner`: own sessions (no DB connection held during the model call), timeout, success path, fallback path (keyword priority, `ai_status = failed`, category and sentiment stay null), model name and prompt version stored, human overrides never overwritten, SLA recalculated from `created_at`, skip when not pending, one structured log line per run (outcome, latency, model).
 - [x] P5.5 Wire into ticket creation with FastAPI BackgroundTasks; default model is a disabled one (fallback) until a real adapter is approved; staff see AI fields, customers never do.
 - [x] P5.6 Prompt-injection tests: hostile ticket text and hostile model output can only ever change the allowed AI fields, never roles, assignee, status or permissions.
-- [ ] P5.7 Gemini adapter (after the SDK dependency is approved) and docs check of the SDK.
-- [x] P5.8 Stuck-pending fix proposed in docs/adr/0006-recover-stuck-pending-triage.md (NOT built; waiting for approval).
+- [x] P5.7 Gemini adapter (`google-genai==2.27.0`, approved 2026-10-02; `GEMINI_MODEL` default `gemini-3.5-flash-lite`), checked against the SDK docs, one live call with a fake ticket.
+- [x] P5.8 Stuck-pending fix proposed in docs/adr/0006-recover-stuck-pending-triage.md (accepted 2026-10-02).
+- [x] P5.9 Recovery sweeper built as accepted: startup plus every 60 s, pending older than 120 s, max 10 per run, advisory lock, env flag and numbers, one log line per run.
