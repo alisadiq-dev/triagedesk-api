@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends
@@ -12,6 +13,7 @@ from app.schemas.common import Page, PageParamsDep
 from app.schemas.tickets import (
     AssigneeUpdate,
     CustomerTicket,
+    SlaStatus,
     StaffTicket,
     StatusChange,
     TicketCreate,
@@ -153,3 +155,9 @@ async def list_events(
         page_size=page.page_size,
         total=total,
     )
+
+
+@router.get("/{ticket_id}/sla")
+async def get_sla(ticket_id: uuid.UUID, service: Service) -> SlaStatus:
+    ticket = await service.get_for_sla(ticket_id)
+    return SlaStatus.from_ticket(ticket, datetime.now(UTC))

@@ -111,11 +111,15 @@ class Ticket(Base):
             and_(cls.resolved_at.is_(None), current > cls.resolution_due_at),
         )
 
+    def first_response_breached_at(self, now: datetime) -> bool:
+        return self.first_responded_at is None and now > self.first_response_due_at
+
+    def resolution_breached_at(self, now: datetime) -> bool:
+        return self.resolved_at is None and now > self.resolution_due_at
+
     def is_breached_at(self, now: datetime) -> bool:
         """Python form of the same rule. Keep in sync with breached_clause (tested together)."""
-        return (self.first_responded_at is None and now > self.first_response_due_at) or (
-            self.resolved_at is None and now > self.resolution_due_at
-        )
+        return self.first_response_breached_at(now) or self.resolution_breached_at(now)
 
     @property
     def is_breached(self) -> bool:
