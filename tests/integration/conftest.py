@@ -3,6 +3,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 
+import httpx2
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -17,6 +18,11 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import Settings
+from app.main import create_app
+from app.models import Profile
+from app.models.enums import Role
+from app.seed import seed
+from tests.support.world import IDS, ROLES, NameTokenVerifier, World
 
 # Throwaway local container from docker-compose.yml (not a real credential).
 DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@127.0.0.1:55432/triagedesk_test"
@@ -75,3 +81,20 @@ async def engine(fresh_database_url: str) -> AsyncIterator[AsyncEngine]:
 async def session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     async with async_sessionmaker(engine, expire_on_commit=False)() as session:
         yield session
+
+
+@pytest.fixture
+async def world(fresh_database_url: str, session: AsyncSession) -> AsyncIterator[World]:
+    """Users for every role, seeded categories and SLA policies, and an HTTP client on the app."""
+    for name, role in ROLES.items():
+        session.add(Profile(id=IDS[name], email=f"{name}@example.com", role=Role(role)))
+    await session.commit()
+    await seed(session, bootstrap_admin_sub=None)
+    settings = Settings(_env_file=None, database_url=SecretStr(fresh_database_url))
+    app = create_app(settings, token_verifier=NameTokenVerifier())
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield World(client=client, session=session, app=app)
+    if app.state.database is not None:
+        await app.state.database.dispose()

@@ -56,7 +56,7 @@ async def get_actor(
 ) -> Actor:
     """The verified user plus the role read from the database (created on first request)."""
     profile = await ProfileService(session).ensure_profile(user)
-    return Actor(id=profile.id, role=profile.role)
+    return Actor(id=profile.id, role=profile.role, email=profile.email)
 
 
 def require_roles(*roles: Role) -> Callable[[Actor], Awaitable[Actor]]:

@@ -1,6 +1,6 @@
-# API contract (`/api/v1`): PROPOSAL, awaiting owner approval
+# API contract (`/api/v1`): APPROVED (2026-10-02, all 11 decisions as proposed)
 
-No endpoint code is written until this is approved. Follows `docs/PRD.md`. All endpoints need `Authorization: Bearer <token>`
+Follows `docs/PRD.md`. All endpoints need `Authorization: Bearer <token>`
 (except `/health` and `/ready`, which exist already and are outside `/api/v1`). Interactive docs stay at `/docs` (FastAPI).
 
 ## Conventions
