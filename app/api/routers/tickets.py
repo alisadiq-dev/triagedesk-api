@@ -1,10 +1,11 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_actor, get_session
+from app.ai.triage import TriageRunner
+from app.api.deps import get_actor, get_session, get_triage_runner
 from app.models.enums import Role, TicketStatus
 from app.schemas.comments import CommentCreate, CustomerComment, StaffComment
 from app.schemas.common import Page, PageParamsDep
@@ -40,8 +41,16 @@ Service = Annotated[TicketService, Depends(get_ticket_service)]
 # The body depends on the caller's role (customer view or staff view), so the response model is
 # not inferred from the annotation; render_ticket picks the right schema.
 @router.post("", status_code=201, response_model=None)
-async def create_ticket(body: TicketCreate, actor: ActorDep, service: Service) -> CustomerTicket:
+async def create_ticket(
+    body: TicketCreate,
+    actor: ActorDep,
+    service: Service,
+    background_tasks: BackgroundTasks,
+    runner: Annotated[TriageRunner, Depends(get_triage_runner)],
+) -> CustomerTicket:
     ticket = await service.create(body)
+    # Runs after the response is sent, so a slow or failing model never blocks ticket creation.
+    background_tasks.add_task(runner.run, ticket.id)
     return render_ticket(actor, ticket, actor.email)
 
 

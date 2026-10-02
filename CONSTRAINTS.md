@@ -16,6 +16,6 @@ Status: APPROVED (2026-10-02, owner moved to the no-stop workflow without change
 | 10 | Latency | p95 target for the ticket list endpoint: TBD in Phase 7 after the first measurement (10,000 seeded tickets) | Phase 7 benchmark | CI smoke later |
 
 Notes:
-- The coverage gate (3) is activated when `app/services` and `app/ai` exist; until then it is not enforced, and I will say so in `docs/progress.md`.
+- The coverage gate (3) is active since Phase 5 (`make test` fails under 85% on `app/services` and `app/ai`; measured with `concurrency = greenlet` so async service code is counted). Current: 96%.
 - Constraint 4 starts when the first endpoint with roles exists (Phase 2 and 3). `/health` and `/ready` are public.
 - Weakening a constraint, or the check that enforces it, counts as lowering a threshold and needs your approval.

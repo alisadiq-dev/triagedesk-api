@@ -9,6 +9,7 @@ run:
 test:
 	docker compose up -d --wait test-db
 	$(BIN)pytest --cov=app --cov-report=term-missing
+	$(BIN)coverage report --include="app/services/*,app/ai/*" --fail-under=85
 
 lint:
 	$(BIN)ruff check .

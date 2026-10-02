@@ -31,3 +31,5 @@ addopts = "-ra --strict-markers"
 [tool.coverage.run]
 source = ["app"]
 branch = true
+# SQLAlchemy async runs service code inside greenlets; without this coverage misses most of it.
+concurrency = ["greenlet", "thread"]

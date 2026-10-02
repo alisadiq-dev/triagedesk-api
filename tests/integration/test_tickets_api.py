@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.models import Ticket, TicketEvent
 from app.models.enums import AiStatus, EventType, Priority, PrioritySource, TicketStatus
+from tests.support.ai import NoTriage
 from tests.support.factories import make_ticket
 from tests.support.world import World
 
@@ -37,6 +38,7 @@ async def test_customer_creates_a_ticket_and_sees_only_allowlisted_fields(world:
 
 
 async def test_a_new_ticket_gets_defaults_sla_deadlines_and_a_created_event(world: World) -> None:
+    world.app.state.triage_runner = NoTriage()  # look at the ticket exactly as created
     response = await create_ticket(world)
 
     ticket = await world.session.get(Ticket, uuid.UUID(response.json()["id"]))
