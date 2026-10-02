@@ -1,10 +1,7 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Request
 from sqlalchemy import text
 
 from app.api.deps import get_database
-from app.core.db import Database
 from app.core.errors import AppError
 
 router = APIRouter(tags=["health"])
@@ -22,9 +19,10 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/ready")
-async def ready(database: Annotated[Database, Depends(get_database)]) -> dict[str, str]:
-    """Readiness: the database answers a trivial query."""
+async def ready(request: Request) -> dict[str, str]:
+    """Readiness: the database is configured and answers a trivial query."""
     try:
+        database = await get_database(request)
         async with database.session() as session:
             await session.execute(text("SELECT 1"))
     except Exception as exc:
