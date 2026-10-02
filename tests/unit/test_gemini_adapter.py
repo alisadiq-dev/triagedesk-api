@@ -161,3 +161,14 @@ def test_an_empty_key_from_the_environment_gives_the_disabled_model(
     monkeypatch.setenv("GEMINI_API_KEY", "")
 
     assert isinstance(build_triage_model(Settings(_env_file=None)), DisabledTriageModel)
+
+
+async def test_a_provider_error_carries_its_type_and_status_but_not_its_message() -> None:
+    error = errors.ClientError(429, {"error": {"message": "quota for key AIza-secret-123"}})
+
+    with pytest.raises(TriageModelError) as raised:
+        await make_model(FakeModels(error=error)).classify(TICKET, CATEGORIES)
+
+    assert raised.value.status_code == 429
+    assert raised.value.cause_type == "ClientError"
+    assert "AIza-secret-123" not in str(raised.value)
