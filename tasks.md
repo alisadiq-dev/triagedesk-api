@@ -157,7 +157,7 @@ Builds endpoints 1 to 13, 15 to 17, 20 and 21. TDD per slice; permissions in the
 
 ## Phase 4: Status workflow and audit log (endpoints 14 and 18)
 
-- [ ] P4.1 Transition table as a pure function with every valid and invalid pair tested.
-- [ ] P4.2 `POST /tickets/{id}/status`: permissions, `resolved_at` set and cleared (reopen), event rows in the same transaction.
-- [ ] P4.3 `GET /tickets/{id}/events` for staff, oldest first, paginated.
-- [ ] P4.4 Permission matrix extended; phase close as above.
+- [x] P4.1 Transition table as a pure function with every valid and invalid pair tested.
+- [x] P4.2 `POST /tickets/{id}/status`: permissions, `resolved_at` set and cleared (reopen), event rows in the same transaction.
+- [x] P4.3 `GET /tickets/{id}/events` for staff, oldest first, paginated.
+- [x] P4.4 Permission matrix extended; phase close as above.
