@@ -83,3 +83,44 @@ Full tests and checks, five-axis self-review with severity labels, one simplific
 2. `make migrate` and `make seed` in Phase 0: should they be stubs that print "available from Phase 1" and exit 0 (so `make` chains keep working), or exit non-zero until real? I recommend exit 0 with a clear message.
 3. GitHub: which repository name and visibility, and is `gh` already authenticated on this machine? I need a remote for CI to run.
 4. Postgres major version for the test container: I'd match the Supabase major version. I'll check the version of your Supabase project by length-safe means only if you give me access; otherwise I pick the current stable and flag it.
+
+## Phase 1: Data model, Alembic, first migration, seed
+
+Data model approved 2026-10-02 (see `docs/data-model.md`). Carried to Phase 3: the role-change endpoint writes one structured log line (actor, target, old role, new role, request id), with a test.
+
+### P1.1 Alembic async setup
+- Do: `alembic init -t async` (checked against current Alembic docs), `env.py` reads the DB URL from Settings, naming convention for constraints and indexes.
+- Acceptance: `make migrate` runs `alembic upgrade head` against the test DB with zero revisions and exits 0.
+- Verify: `make migrate` (with DATABASE_URL pointing at the test DB)
+
+### P1.2 Enums, profiles, categories, sla_policies (models + tests)
+- Acceptance (integration tests first): CHECK constraints reject bad values (unknown role, non-positive hours, resolution < response); unique case-insensitive category names.
+- Depends on: P1.1
+
+### P1.3 tickets model with SLA columns and breach expression
+- Acceptance: breach SQL expression and Python property agree on a table of cases (no response, responded, resolved, reopened, not yet due); `resolved_at` invariant CHECK holds.
+- Depends on: P1.2
+
+### P1.4 ticket_comments and ticket_events models
+- Acceptance: a customer cannot have `is_internal = true` (DB CHECK); events keep who, what, from, to, when.
+- Depends on: P1.3
+
+### P1.5 Migration 0001 with downgrade
+- Acceptance: on a fresh Postgres, `upgrade head`, then `downgrade base`, then `upgrade head` all succeed; the resulting schema equals the models (Alembic autogenerate shows no diff).
+- Self-review (doubt-driven) before commit: claim, doubt, what could break, reconcile.
+- Depends on: P1.2 to P1.4
+
+### P1.6 Indexes and full-text search
+- Acceptance: tests assert each index exists (status, assignee_id, created_at, customer_id, both partial SLA indexes, GIN on search_vector) and that a `to_tsquery` search finds a ticket by title and by description words.
+- Depends on: P1.5
+
+### P1.7 Seed script and `make seed`
+- Acceptance: idempotent (run twice, same rows); seeds categories and four SLA policies without overwriting admin edits; upserts the bootstrap admin profile from an env var holding the Supabase `sub`; `make migrate` and `make seed` are real.
+- Depends on: P1.5
+
+### P1.8 CI runs `alembic upgrade head` on a fresh Postgres
+- Acceptance: CI green on GitHub with the new step.
+- Depends on: P1.5
+
+### Phase 1 close (done)
+All checks, five-axis review, simplification pass, update `docs/progress.md`, open PR, wait for CI green, merge, sync main.

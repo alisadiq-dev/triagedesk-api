@@ -41,6 +41,7 @@ Rules:
 - A customer requesting another user's ticket gets 404. An agent requesting a ticket assigned to another agent gets 404.
 - The role lives only in `profiles.role`, never in JWT claims. Admin checks read the database.
 - No request body from a non-admin can set or change a role (tested).
+- Every role change writes one structured log line (actor id, target id, old role, new role, request id), tested. Role changes are not audited in a table.
 - Only an admin can change roles, through an admin endpoint. An admin cannot change an agent to customer while that agent has non-closed assigned tickets (409).
 - Every role is tested on every endpoint.
 

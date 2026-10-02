@@ -11,13 +11,16 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "S"]
 
+[tool.ruff.lint.isort]
+known-third-party = ["alembic"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["app", "tests", "scripts"]
+files = ["app", "tests", "scripts", "alembic"]
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
