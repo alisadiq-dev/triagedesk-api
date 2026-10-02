@@ -17,7 +17,7 @@ select = ["E", "F", "I", "B", "UP", "SIM", "S"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["app", "tests"]
+files = ["app", "tests", "scripts"]
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
