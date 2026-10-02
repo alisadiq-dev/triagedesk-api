@@ -69,3 +69,27 @@ def test_unhandled_exception_returns_generic_500_without_leaking_details() -> No
         "error": {"code": "internal_error", "message": "Internal server error"}
     }
     assert "hunter2" not in response.text
+
+
+def test_malformed_json_is_400_not_422() -> None:
+    from pydantic import BaseModel
+
+    class Payload(BaseModel):
+        name: str
+
+    app = create_app()
+
+    @app.post("/payload")
+    async def payload(body: Payload) -> dict[str, str]:
+        return {"name": body.name}
+
+    client = TestClient(app)
+
+    malformed = client.post(
+        "/payload", content=b"{not json", headers={"content-type": "application/json"}
+    )
+    invalid = client.post("/payload", json={"name": 5})
+
+    assert malformed.status_code == 400
+    assert malformed.json()["error"]["code"] == "bad_request"
+    assert invalid.status_code == 422

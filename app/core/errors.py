@@ -51,6 +51,8 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        if any(error["type"] == "json_invalid" for error in exc.errors()):
+            return error_response(400, "bad_request", "Malformed JSON in the request body")
         # Only field locations and messages: never echo the submitted input.
         parts = [f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()]
         return error_response(422, "validation_error", "; ".join(parts))

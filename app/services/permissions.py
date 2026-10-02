@@ -18,6 +18,7 @@ class Actor:
 
     id: uuid.UUID
     role: Role
+    email: str | None = None
 
 
 def require_role(actor: Actor, *allowed: Role) -> None:

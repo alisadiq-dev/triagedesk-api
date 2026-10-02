@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routers import health
+from app.api.v1 import api_v1
 from app.core.config import Settings
 from app.core.db import Database
 from app.core.errors import register_error_handlers
 from app.core.jwt_auth import JwtTokenVerifier
+from app.core.logging import RequestIdMiddleware, configure_logging
 from app.core.security import TokenVerifier
 
 
@@ -29,9 +31,12 @@ def create_app(
     app.state.settings = settings
     app.state.database = None
     app.state.token_verifier = token_verifier
+    app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
     app.include_router(health.router)
+    app.include_router(api_v1)
     return app
 
 
+configure_logging()
 app = create_app()
