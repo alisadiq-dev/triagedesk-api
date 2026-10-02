@@ -434,3 +434,23 @@ The first demo ticket on the real stack (with `GEMINI_API_KEY` in the prod env f
 
 Incident: while introspecting the SDK client I printed its HTTP options, which include the `x-goog-api-key` header, so the Gemini key
 appeared in this session's output. Rotate that key. The diagnostic scripts now print header names only.
+
+### Root cause found (second demo run, with the new log line)
+
+The second demo ticket also took the fallback, and the line now said `error_type: RuntimeError`, no status, 71 ms. Replaying the app's real
+startup in the container (lifespan, then the model call as a background task) printed the traceback:
+`RuntimeError: Cannot send a request, as the client has been closed.` (after a first attempt that ended in
+`httpx.RemoteProtocolError: Server disconnected without sending a response`).
+
+Cause: `google-genai`'s `AsyncClient.__del__` schedules `aclose()` when a loop is running, which closes the HTTP client shared with
+`client.aio.models`. The adapter kept only `client.aio.models`, so the `Client` and `AsyncClient` objects were garbage collected at some
+later moment (reproduced without any network: build the model in a running loop, `gc.collect()`, a few loop turns, and the SDK's
+`httpx` client is closed). My earlier manual calls were short-lived scripts that made their first call before any collection, which is why
+they worked and the long-running app did not. The earlier timeout hypothesis (27 ms) was a red herring: the failure was local and instant.
+
+Fix (tests first): `GeminiTriageModel` keeps a reference to the SDK client for its whole life and closes it explicitly (`aclose`) when the
+app shuts down; `BudgetedTriageModel` and `TriageRunner` pass the close through and the app lifespan calls it. Regression tests: the SDK
+client is still open after a garbage collection, `aclose` closes it, and the app closes the model on shutdown.
+
+Why the tests missed it: every test used a fake model, by design, and the one live check was a short script. A test that builds the real adapter
+and forces a collection catches this class of bug without network access.

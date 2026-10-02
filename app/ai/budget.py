@@ -24,3 +24,8 @@ class BudgetedTriageModel:
         if self._limiter.check("model") is not None:
             raise TriageModelError("model call budget used up for this minute")
         return await self.inner.classify(ticket, categories)
+
+    async def aclose(self) -> None:
+        close = getattr(self.inner, "aclose", None)
+        if close is not None:
+            await close()

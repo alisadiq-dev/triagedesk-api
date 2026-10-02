@@ -1,5 +1,7 @@
+import asyncio
+import gc
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from google.genai import errors, types
@@ -172,3 +174,43 @@ async def test_a_provider_error_carries_its_type_and_status_but_not_its_message(
     assert raised.value.status_code == 429
     assert raised.value.cause_type == "ClientError"
     assert "AIza-secret-123" not in str(raised.value)
+
+
+# --- the SDK client must outlive the adapter's setup (found in production; docs/progress.md) ---
+
+
+def sdk_http_client(model: BudgetedTriageModel) -> Any:
+    """The SDK's own async HTTP client behind a model built by build_triage_model."""
+    return cast(Any, model.inner)._models._api_client._async_httpx_client
+
+
+def real_model() -> BudgetedTriageModel:
+    settings = Settings(
+        _env_file=None,
+        database_url=SecretStr("postgresql+asyncpg://x/y"),
+        gemini_api_key=SecretStr("fake-key"),
+    )
+    model = build_triage_model(settings)
+    assert isinstance(model, BudgetedTriageModel)
+    return model
+
+
+async def test_the_sdk_http_client_is_not_closed_by_garbage_collection_after_setup() -> None:
+    # The SDK's AsyncClient closes the shared connection in __del__ when a loop is running. If we
+    # keep only `client.aio.models`, the client object is collected at some later moment and the
+    # first real request fails with "Cannot send a request, as the client has been closed".
+    model = real_model()
+
+    gc.collect()
+    for _ in range(3):
+        await asyncio.sleep(0)
+
+    assert sdk_http_client(model).is_closed is False
+
+
+async def test_aclose_closes_the_sdk_http_client() -> None:
+    model = real_model()
+
+    await model.aclose()
+
+    assert sdk_http_client(model).is_closed is True

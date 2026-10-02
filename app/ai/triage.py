@@ -71,6 +71,12 @@ class TriageRunner:
         self._model = model
         self._timeout = timeout_seconds
 
+    async def aclose(self) -> None:
+        """Release what the model holds (connections), at app shutdown."""
+        close = getattr(self._model, "aclose", None)
+        if close is not None:
+            await close()
+
     async def run(self, ticket_id: uuid.UUID) -> Outcome:
         started = time.monotonic()
         outcome = Outcome.FAILED
