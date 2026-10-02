@@ -95,7 +95,7 @@ class JwksProvider:
         ):
             raise JwksUnavailableError("jwks fetch skipped during backoff after a failure")
         age = self._cache_age()
-        return age is None or age >= self._cache_seconds or age >= self._min_refetch_seconds
+        return age is None or age >= min(self._cache_seconds, self._min_refetch_seconds)
 
     async def _refresh(self) -> None:
         try:

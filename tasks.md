@@ -140,4 +140,4 @@ New dependency approved by the owner: `PyJWT[crypto]==2.15.1` (httpx2 moves to r
 - [x] P2.4 `JwtTokenVerifier` (ES256 pinned, required claims, aud and iss from settings, is_anonymous rejected, identical 401 body, 503 fail-closed with a log line) with tests for expired, missing, wrong-audience, wrong-issuer, wrong-algorithm, tampered and unsigned tokens.
 - [x] P2.5 Missing token gets 401 before any JWKS or database work (tested).
 - [x] P2.6 Local Supabase stack: git-ignored `supabase/signing_keys.json` with an ES256 key, `docs/local-supabase.md`, live check script confirming `aud`, `iss`, ES256 and verification of a real token.
-- [ ] P2.7 Phase close: checks, security review of auth, five-axis review, progress, PR, CI green, merge.
+- [x] P2.7 Security audit (security-auditor persona) and fixes, then phase close: checks, five-axis review, progress, PR, CI green, merge.
