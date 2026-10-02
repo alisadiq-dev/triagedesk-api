@@ -10,6 +10,8 @@ RUN useradd --system --uid 10001 --no-create-home appuser
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /srv
 COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
 USER appuser
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \

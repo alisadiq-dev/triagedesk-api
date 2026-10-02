@@ -204,3 +204,22 @@ Rate-limit numbers are env settings with defaults (PRD: numbers are decided in t
 - [x] P8.2 Request body size limit (413, also for chunked bodies), response security headers (`nosniff`, `no-store`, `frame-ancestors 'none'`; not on the interactive docs), env flag for the interactive docs and OpenAPI.
 - [x] P8.3 OWASP API Security Top 10 (2023) review: independent pass by the security-auditor persona, findings fixed or accepted, written up in `docs/security-review-owasp-api.md` with the test that backs each control.
 - [x] P8.4 `make audit` clean and CI audit step confirmed; phase close: checks, five-axis review, progress, PR, CI green, merge.
+
+## Phase 9: Local production setup (approved by the owner 2026-10-02; ADR 0005: no TLS, no cloud)
+
+Decisions from the owner: signups off on the local Supabase stack with admin-API demo users; exactly one uvicorn worker, with the
+per-instance limits documented in the README; audit item L4 accepted and documented; uvicorn access log off, our structured access log
+with the route template only; Nginx overwrites `X-Forwarded-For`, `client_max_body_size 64k`, docs not exposed; Postgres on a named volume.
+
+- [x] P9.0 Done before the compose work: `AI_MAX_OUTPUT_TOKENS` (one more live call, verified), structured access log with a test, `SUPABASE_JWKS_BASE_URL`, signups off, `scripts/create_demo_users.py` with tests.
+- [x] P9.1 `docker-compose.prod.yml` (db with a named volume and no published port, one-shot migrate, app with 1 worker and `--proxy-headers --forwarded-allow-ips` set to the Nginx container's fixed address only, read-only root, non-root, Nginx unprivileged on 127.0.0.1) and `deploy/nginx.conf`; `deploy/prod.env.example`, `deploy/init_secrets.sh`; `make prod-*` targets; the image carries Alembic.
+- [x] P9.2 `scripts/smoke_test.py` against the Nginx URL (health, ready, docs hidden, 401 shape, 413, security headers, spoofed `X-Forwarded-For` does not bypass the rate limit, optional signed-in flow with the demo users); unit tests for its checks; run for real against a throwaway project.
+- [x] P9.3 `docs/runbook.md`: start, stop, seed, demo users, backup and restore with `pg_dump` and `pg_restore`; the restore procedure is run for real against the throwaway project.
+- [x] P9.4 CI checks the compose file and the Nginx config; phase close: checks, five-axis review, progress, PR, CI green, merge.
+
+## Phase 10: Documentation and demo
+
+- [ ] P10.1 README (what it is, architecture, quick start, commands, per-instance rate limit note, known limitations including L4), `docs/architecture.md` with Mermaid diagrams (context, triage sequence, status workflow, deployment).
+- [ ] P10.2 ADRs 0007 to 0010 for the decisions of Phases 5 to 9 that have none yet.
+- [ ] P10.3 `docs/curl-collection.md` and `scripts/demo.py` (an end-to-end demo with the demo users), run against the local production stack.
+- [ ] P10.4 Phase close: checks, review, progress, PR, CI green, merge, final summary.
