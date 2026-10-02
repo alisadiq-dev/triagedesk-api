@@ -129,3 +129,52 @@ def test_recovery_numbers_must_be_positive(monkeypatch: pytest.MonkeyPatch, name
 
     with pytest.raises(ValidationError, match=name.lower()):
         Settings(_env_file=None)
+
+
+def test_hardening_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    for name in (
+        "RATE_LIMIT_ENABLED",
+        "RATE_LIMIT_PUBLIC_PER_MINUTE",
+        "RATE_LIMIT_API_PER_MINUTE",
+        "RATE_LIMIT_TICKET_CREATE_PER_MINUTE",
+        "RATE_LIMIT_COMMENT_PER_MINUTE",
+        "MAX_REQUEST_BODY_BYTES",
+        "API_DOCS_ENABLED",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.rate_limit_enabled is True
+    assert (settings.rate_limit_public_per_minute, settings.rate_limit_api_per_minute) == (120, 600)
+    assert settings.rate_limit_ticket_create_per_minute == 10
+    assert settings.rate_limit_comment_per_minute == 30
+    assert settings.max_request_body_bytes == 65_536
+    assert settings.api_docs_enabled is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "RATE_LIMIT_PUBLIC_PER_MINUTE",
+        "RATE_LIMIT_API_PER_MINUTE",
+        "RATE_LIMIT_TICKET_CREATE_PER_MINUTE",
+        "RATE_LIMIT_COMMENT_PER_MINUTE",
+        "MAX_REQUEST_BODY_BYTES",
+    ],
+)
+def test_hardening_numbers_must_be_positive(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv(name, "0")
+
+    with pytest.raises(ValidationError, match=name.lower()):
+        Settings(_env_file=None)
+
+
+def test_hardening_settings_load_without_a_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.config import HardeningSettings
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    assert HardeningSettings(_env_file=None).rate_limit_enabled is True

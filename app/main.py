@@ -60,6 +60,7 @@ def create_app(
     app.state.triage_model = triage_model
     app.state.triage_runner = None
     app.state.recovery_task = None
+    app.state.rate_limits = None
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
     app.include_router(health.router)

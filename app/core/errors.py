@@ -27,6 +27,16 @@ class AppError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+        self.extra_headers: dict[str, str] = {}  # per-instance headers, such as Retry-After
+
+
+class RateLimitedError(AppError):
+    status_code = 429
+    code = "rate_limited"
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__("Too many requests. Try again later.")
+        self.extra_headers = {"Retry-After": str(retry_after_seconds)}
 
 
 def error_response(
@@ -42,7 +52,9 @@ def error_response(
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
-        return error_response(exc.status_code, exc.code, exc.message, exc.headers)
+        return error_response(
+            exc.status_code, exc.code, exc.message, {**exc.headers, **exc.extra_headers}
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_exception(_: Request, exc: StarletteHTTPException) -> JSONResponse:

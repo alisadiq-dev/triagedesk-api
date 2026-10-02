@@ -7,9 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.gemini import build_triage_model
 from app.ai.triage import TriageRunner
-from app.core.config import get_settings
+from app.core.config import HardeningSettings, get_hardening_settings, get_settings
 from app.core.db import Database
+from app.core.errors import RateLimitedError
 from app.core.jwt_auth import build_verifier
+from app.core.rate_limit import RateLimiter, RateLimits
 from app.core.security import AuthenticatedUser, AuthenticationError, TokenVerifier
 from app.models.enums import Role
 from app.services.permissions import Actor, require_role
@@ -36,6 +38,45 @@ def ensure_triage_runner(app: FastAPI) -> TriageRunner:
         )
     runner: TriageRunner = app.state.triage_runner
     return runner
+
+
+def ensure_rate_limits(app: FastAPI) -> RateLimits:
+    """Built lazily from the settings, like the database."""
+    if app.state.rate_limits is None:
+        settings: HardeningSettings = app.state.settings or get_hardening_settings()
+
+        def per_minute(limit: int) -> RateLimiter:
+            return RateLimiter(limit, 60.0)
+
+        app.state.rate_limits = RateLimits(
+            enabled=settings.rate_limit_enabled,
+            public=per_minute(settings.rate_limit_public_per_minute),
+            api=per_minute(settings.rate_limit_api_per_minute),
+            ticket_create=per_minute(settings.rate_limit_ticket_create_per_minute),
+            comment_create=per_minute(settings.rate_limit_comment_per_minute),
+        )
+    limits: RateLimits = app.state.rate_limits
+    return limits
+
+
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client is not None else "unknown"
+
+
+def _enforce(limits: RateLimits, limiter: RateLimiter, key: str) -> None:
+    if limits.enabled and (retry_after := limiter.check(key)) is not None:
+        raise RateLimitedError(retry_after)
+
+
+async def limit_public(request: Request) -> None:
+    limits = ensure_rate_limits(request.app)
+    _enforce(limits, limits.public, _client_key(request))
+
+
+async def limit_api(request: Request) -> None:
+    """Runs before the token is checked, so floods of bad tokens are cut off cheaply."""
+    limits = ensure_rate_limits(request.app)
+    _enforce(limits, limits.api, _client_key(request))
 
 
 async def get_database(request: Request) -> Database:
@@ -88,3 +129,17 @@ def require_roles(*roles: Role) -> Callable[[Actor], Awaitable[Actor]]:
         return actor
 
     return dependency
+
+
+async def limit_ticket_create(
+    request: Request, actor: Annotated[Actor, Depends(get_actor)]
+) -> None:
+    limits = ensure_rate_limits(request.app)
+    _enforce(limits, limits.ticket_create, str(actor.id))
+
+
+async def limit_comment_create(
+    request: Request, actor: Annotated[Actor, Depends(get_actor)]
+) -> None:
+    limits = ensure_rate_limits(request.app)
+    _enforce(limits, limits.comment_create, str(actor.id))

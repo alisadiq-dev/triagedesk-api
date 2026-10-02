@@ -8,10 +8,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
-class Settings(BaseSettings):
-    """All configuration comes from environment variables (or a local .env file)."""
+class HardeningSettings(BaseSettings):
+    """Settings the public routes and middleware need. They load without a database URL."""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # Rate limits (in process, per app instance; see app/core/rate_limit.py).
+    rate_limit_enabled: bool = True
+    rate_limit_public_per_minute: int = Field(default=120, gt=0)
+    rate_limit_api_per_minute: int = Field(default=600, gt=0)
+    rate_limit_ticket_create_per_minute: int = Field(default=10, gt=0)
+    rate_limit_comment_per_minute: int = Field(default=30, gt=0)
+    max_request_body_bytes: int = Field(default=65_536, gt=0)
+    api_docs_enabled: bool = True
+
+
+class Settings(HardeningSettings):
+    """All configuration comes from environment variables (or a local .env file)."""
 
     database_url: SecretStr
     db_pool_size: int = Field(default=5, gt=0)
@@ -50,3 +63,8 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+@lru_cache
+def get_hardening_settings() -> HardeningSettings:
+    return HardeningSettings()
