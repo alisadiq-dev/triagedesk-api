@@ -1,7 +1,7 @@
 # Override BIN= (empty) in CI where tools are already on PATH.
 BIN ?= .venv/bin/
 
-.PHONY: run test lint migrate seed audit
+.PHONY: run test lint migrate seed audit bench
 
 run:
 	$(BIN)uvicorn app.main:app --reload
@@ -24,3 +24,8 @@ seed:
 
 audit:
 	$(BIN)pip-audit -r requirements-dev.txt --no-deps --disable-pip
+
+# Needs the test Postgres (make test starts it). Creates and drops a throwaway database.
+bench:
+	docker compose up -d --wait test-db
+	PYTHONPATH=. BENCH_ADMIN_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:55432/postgres $(BIN)python scripts/benchmark_list.py

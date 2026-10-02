@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.triage import TriageRunner
 from app.api.deps import get_actor, get_session, get_triage_runner
-from app.models.enums import Role, TicketStatus
+from app.models.enums import Role
 from app.schemas.comments import CommentCreate, CustomerComment, StaffComment
 from app.schemas.common import Page, PageParamsDep
 from app.schemas.tickets import (
@@ -18,6 +18,7 @@ from app.schemas.tickets import (
     StatusChange,
     TicketCreate,
     TicketEventOut,
+    TicketFiltersDep,
     TicketOverrides,
     TicketSort,
     render_staff_ticket,
@@ -61,10 +62,10 @@ async def list_tickets(
     actor: ActorDep,
     service: Service,
     page: PageParamsDep,
-    status: TicketStatus | None = None,
+    filters: TicketFiltersDep,
     sort: TicketSort = TicketSort.NEWEST,
 ) -> Page[CustomerTicket] | Page[StaffTicket]:
-    rows, total = await service.list_tickets(status, sort, page)
+    rows, total = await service.list_tickets(filters, sort, page)
     if actor.role == Role.CUSTOMER:
         customer_items = [CustomerTicket.model_validate(ticket) for ticket, _ in rows]
         return Page[CustomerTicket](

@@ -268,3 +268,39 @@ Checks: 629 tests, coverage 96% on `app/services` and `app/ai`, ruff, mypy clean
 | Architecture | No new SQL: the endpoint reads the already loaded ticket | Info | OK |
 | Security | Same 404 then 403 order as the events endpoint; customers get 403 on their own ticket, 404 on others | Info | Matrix |
 | Performance | One ticket read, no extra queries | Info | OK |
+
+## Phase 7: List filters, N+1 guard, performance baseline (done)
+
+Delivered:
+- Filters on `GET /api/v1/tickets`: `priority`, `category_id`, `assignee_id` (admin only), `unassigned`, `sla_breached`, `q` (full text,
+  `plainto_tsquery`), `created_after` (inclusive), `created_before` (exclusive); all combine with AND, `total` follows them, they never
+  widen visibility. Customers get 403 on staff-only filters (a priority or category filter would reveal fields they must not see).
+  Decisions recorded in `docs/api-contract.md` (clarifications; no endpoint or field added).
+- `tests/integration/test_query_counts.py`: constraint 8 is now enforced. SQL statements are counted for 1 and 30 rows (tickets for each
+  role with filters, comments, events) and must be equal.
+- `scripts/benchmark_list.py` (`make bench`) and `docs/performance.md`: p50/p95/p99 on 10,000 tickets and `EXPLAIN ANALYZE` with and
+  without indexes. Default list p95 about 10 ms; worst scenario (deep page) about 23 ms.
+- **Constraint 10: proposed p95 of 50 ms or less. `CONSTRAINTS.md` still says TBD until the owner confirms (setting a threshold is an owner decision).**
+
+Checks: 671 tests, coverage 96% on `app/services` and `app/ai`, ruff, mypy, pip-audit clean.
+
+### Doubt pass (filters)
+| Claim | Doubt | Result |
+|---|---|---|
+| Filters cannot reveal hidden fields | A customer filtering by priority learns the priority | 403 for customers on staff-only filters (tested for each) |
+| Filters cannot widen access | A filter overriding the visibility rule | Visibility is always ANDed first; agent tests show other agents' tickets never appear |
+| Search text is data | Query syntax or SQL in `q` | `plainto_tsquery` with bound parameters; hostile strings tested (200 OK, nothing executed) |
+| Date filters are unambiguous | Naive datetimes against timestamptz | Timezone required (422), inclusive after / exclusive before, tested on the boundary |
+| No N+1 | Per-row lookups added later | Query-count test fails if the count differs between 1 and 30 rows |
+
+### Five-axis self-review
+| Axis | Finding | Severity | Status |
+|---|---|---|---|
+| Correctness | Sorting by resolution due scans and sorts all tickets (the partial index covers unresolved only) | Low | Measured about 6 ms at 10,000 rows; noted in `docs/performance.md`, no index added |
+| Readability | Filter conditions live in one repository function; role rules in one service block | Info | OK |
+| Architecture | `TicketFilters` dataclass replaces the loose `status` argument | Info | OK |
+| Security | See doubt pass | - | Tested |
+| Performance | See `docs/performance.md`; deep offset pages are the slowest, by design (offset pagination is approved) | Info | Accepted |
+
+### Not verified
+Concurrent load, tables larger than 10,000 rows, network and Nginx overhead (Phase 9), cold cache.

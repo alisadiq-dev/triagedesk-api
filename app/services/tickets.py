@@ -17,7 +17,13 @@ from app.repositories.events import EventRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.tickets import TicketRepository, TicketRow
 from app.schemas.common import PageParams
-from app.schemas.tickets import CUSTOMER_SORTS, TicketCreate, TicketOverrides, TicketSort
+from app.schemas.tickets import (
+    CUSTOMER_SORTS,
+    TicketCreate,
+    TicketFilters,
+    TicketOverrides,
+    TicketSort,
+)
 from app.services.errors import (
     AlreadyAssignedError,
     ConflictError,
@@ -70,12 +76,19 @@ class TicketService:
         return row
 
     async def list_tickets(
-        self, status: TicketStatus | None, sort: TicketSort, page: PageParams
+        self, filters: TicketFilters, sort: TicketSort, page: PageParams
     ) -> tuple[list[TicketRow], int]:
-        if self._actor.role == Role.CUSTOMER and sort not in CUSTOMER_SORTS:
+        role = self._actor.role
+        if role == Role.CUSTOMER and sort not in CUSTOMER_SORTS:
             raise InputError("This sort order is not available")
+        if (role == Role.CUSTOMER and filters.staff_only_used) or (
+            role != Role.ADMIN and filters.assignee_id is not None
+        ):
+            raise ForbiddenError("You do not have permission to use this filter")
+        if filters.unassigned is not None and filters.assignee_id is not None:
+            raise InputError("unassigned and assignee_id cannot be used together")
         return await self._tickets.list_page(
-            ticket_visibility(self._actor), status, sort, page.offset, page.page_size
+            ticket_visibility(self._actor), filters, sort, page.offset, page.page_size
         )
 
     # --- changes by staff ---------------------------------------------------------------------

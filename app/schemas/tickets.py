@@ -1,9 +1,11 @@
 import enum
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from fastapi import Depends, Query
+from pydantic import AwareDatetime, BaseModel, ConfigDict, StringConstraints, model_validator
 
 from app.models import Ticket
 from app.models.enums import (
@@ -32,6 +34,49 @@ class TicketSort(enum.StrEnum):
 
 
 CUSTOMER_SORTS = {TicketSort.NEWEST, TicketSort.OLDEST}
+
+
+@dataclass(frozen=True)
+class TicketFilters:
+    """Optional list filters (endpoint 11). Role rules are applied in the service."""
+
+    status: TicketStatus | None = None
+    priority: Priority | None = None
+    category_id: int | None = None
+    assignee_id: uuid.UUID | None = None
+    unassigned: bool | None = None
+    sla_breached: bool | None = None
+    q: str | None = None
+    created_after: datetime | None = None  # inclusive
+    created_before: datetime | None = None  # exclusive
+
+    @property
+    def staff_only_used(self) -> bool:
+        """Filters on fields that customers may never see (using them would reveal the field)."""
+        return any(
+            value is not None
+            for value in (self.priority, self.category_id, self.unassigned, self.sla_breached)
+        )
+
+
+def _ticket_filters(
+    status: TicketStatus | None = None,
+    priority: Priority | None = None,
+    category_id: int | None = None,
+    assignee_id: uuid.UUID | None = None,
+    unassigned: bool | None = None,
+    sla_breached: bool | None = None,
+    q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    created_after: AwareDatetime | None = None,
+    created_before: AwareDatetime | None = None,
+) -> TicketFilters:
+    return TicketFilters(
+        status, priority, category_id, assignee_id, unassigned, sla_breached, q,
+        created_after, created_before,
+    )  # fmt: skip
+
+
+TicketFiltersDep = Annotated[TicketFilters, Depends(_ticket_filters)]
 
 
 class TicketCreate(BaseModel):

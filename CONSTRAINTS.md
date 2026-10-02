@@ -13,7 +13,7 @@ Status: APPROVED (2026-10-02, owner moved to the no-stop workflow without change
 | 7 | Dependencies | pip-audit reports no known vulnerabilities | CI | `make audit` |
 | 8 | N+1 | list endpoints run a constant number of queries regardless of row count (query-count test) | CI | review |
 | 9 | Migrations | `alembic upgrade head` works on a fresh Postgres, and every migration has a working downgrade | CI (from Phase 1) | review |
-| 10 | Latency | p95 target for the ticket list endpoint: TBD in Phase 7 after the first measurement (10,000 seeded tickets) | Phase 7 benchmark | CI smoke later |
+| 10 | Latency | p95 target for the ticket list endpoint: still TBD until the owner confirms. Proposed 2026-10-02: p95 of 50 ms or less for every scenario in `scripts/benchmark_list.py` on 10,000 seeded tickets, in process (first measurement: worst p95 about 23 ms, see `docs/performance.md`) | `make bench` (manual) | CI smoke later |
 
 Notes:
 - The coverage gate (3) is active since Phase 5 (`make test` fails under 85% on `app/services` and `app/ai`; measured with `concurrency = greenlet` so async service code is counted). Current: 96%.
