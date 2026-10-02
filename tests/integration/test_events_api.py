@@ -43,13 +43,14 @@ async def test_staff_see_the_full_audit_trail_oldest_first(world: World) -> None
     assert response.status_code == 200
     assert [(e["event_type"], e["from_value"], e["to_value"]) for e in body["items"]] == [
         ("ticket_created", None, "open"),
+        ("triage_failed", None, "model_error"),  # no AI model is configured in tests
         ("assigned", None, str(world.ids["agent"])),
         ("priority_changed", "medium", "high"),
         ("status_changed", "open", "in_progress"),
     ]
     assert all(set(e) == EVENT_KEYS for e in body["items"])
     assert body["items"][0]["actor_id"] == str(world.ids["customer"])
-    assert body["total"] == 4
+    assert body["total"] == 5
 
 
 async def test_events_are_paginated_with_the_shared_shape(world: World) -> None:
@@ -60,8 +61,8 @@ async def test_events_are_paginated_with_the_shared_shape(world: World) -> None:
     )
 
     body = response.json()
-    assert (body["page"], body["page_size"], body["total"]) == (2, 3, 4)
-    assert [e["event_type"] for e in body["items"]] == ["status_changed"]
+    assert (body["page"], body["page_size"], body["total"]) == (2, 3, 5)
+    assert [e["event_type"] for e in body["items"]] == ["priority_changed", "status_changed"]
 
 
 async def test_events_are_only_for_staff_who_can_see_the_ticket(world: World) -> None:

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     jwks_timeout_seconds: float = Field(default=3.0, gt=0)
     jwks_cache_seconds: int = Field(default=300, gt=0)
     jwks_min_refetch_seconds: int = Field(default=30, gt=0)
+    ai_timeout_seconds: float = Field(default=15.0, gt=0)
 
     @field_validator("supabase_url")
     @classmethod

@@ -5,6 +5,8 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.interface import DisabledTriageModel
+from app.ai.triage import TriageRunner
 from app.core.config import get_settings
 from app.core.db import Database
 from app.core.jwt_auth import build_verifier
@@ -23,6 +25,19 @@ async def get_database(request: Request) -> Database:
         app_state.database = Database(app_state.settings or get_settings())
     database: Database = app_state.database
     return database
+
+
+async def get_triage_runner(
+    request: Request, database: Annotated[Database, Depends(get_database)]
+) -> TriageRunner:
+    """Built lazily. Without a configured model, triage always takes the keyword fallback."""
+    app_state = request.app.state
+    if app_state.triage_runner is None:
+        settings = app_state.settings or get_settings()
+        model = app_state.triage_model or DisabledTriageModel()
+        app_state.triage_runner = TriageRunner(database, model, settings.ai_timeout_seconds)
+    runner: TriageRunner = app_state.triage_runner
+    return runner
 
 
 async def get_session(

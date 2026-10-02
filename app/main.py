@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.ai.interface import TriageModel
 from app.api.routers import health
 from app.api.v1 import api_v1
 from app.core.config import Settings
@@ -25,12 +26,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(
-    settings: Settings | None = None, token_verifier: TokenVerifier | None = None
+    settings: Settings | None = None,
+    token_verifier: TokenVerifier | None = None,
+    triage_model: TriageModel | None = None,
 ) -> FastAPI:
     app = FastAPI(title="TriageDesk API", lifespan=lifespan)
     app.state.settings = settings
     app.state.database = None
     app.state.token_verifier = token_verifier
+    app.state.triage_model = triage_model
+    app.state.triage_runner = None
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
     app.include_router(health.router)
