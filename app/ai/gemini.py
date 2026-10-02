@@ -63,7 +63,9 @@ class GeminiTriageModel:
             )
         except errors.APIError as exc:
             # Only the status code: the provider's message is not ours to log or store.
-            raise TriageModelError(f"gemini api error {exc.code}") from None
+            raise TriageModelError(
+                f"gemini api error {exc.code}", status_code=exc.code, cause_type=type(exc).__name__
+            ) from None
         candidates = response.candidates or []
         if candidates and candidates[0].finish_reason == types.FinishReason.MAX_TOKENS:
             raise TriageModelError("gemini answer was cut off by the output token limit")

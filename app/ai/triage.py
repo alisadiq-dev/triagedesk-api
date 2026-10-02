@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.interface import CategoryOption, TicketText, TriageModel
+from app.ai.interface import CategoryOption, TicketText, TriageModel, TriageModelError
 from app.ai.keywords import keyword_priority
 from app.ai.output import InvalidTriageOutputError, TriageOutput, parse_output
 from app.ai.prompts import PROMPT_VERSION
@@ -39,6 +39,27 @@ class Outcome(enum.StrEnum):
 
 
 @dataclass(frozen=True)
+class _ModelAnswer:
+    """What came back from the model call. On failure only the reason and a type and status."""
+
+    output: TriageOutput | None
+    reason: str | None = None
+    error_type: str | None = None  # exception class name, never its message
+    status_code: int | None = None  # HTTP status of a provider error, if there was one
+
+
+def _describe_error(exc: Exception) -> tuple[str, int | None]:
+    """The exception's type name and HTTP status (if it has one). Never its message."""
+    if isinstance(exc, TriageModelError):
+        return exc.cause_type or type(exc).__name__, exc.status_code
+    for attribute in ("status_code", "code"):
+        value = getattr(exc, attribute, None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return type(exc).__name__, value
+    return type(exc).__name__, None
+
+
+@dataclass(frozen=True)
 class _Snapshot:
     ticket: TicketText
     categories: list[CategoryOption]
@@ -54,18 +75,26 @@ class TriageRunner:
         started = time.monotonic()
         outcome = Outcome.FAILED
         reason: str | None = "storage_error"
+        error_type: str | None = None
+        status_code: int | None = None
         try:
             snapshot = await self._load(ticket_id)
             if snapshot is None:
                 outcome, reason = Outcome.SKIPPED, "not_pending"
             else:
-                result, reason = await self._ask_model(snapshot)
-                applied = await self._apply(ticket_id, result, reason)
+                answer = await self._ask_model(snapshot)
+                reason, error_type, status_code = (
+                    answer.reason,
+                    answer.error_type,
+                    answer.status_code,
+                )
+                applied = await self._apply(ticket_id, answer.output, answer.reason)
                 if not applied:
                     outcome, reason = Outcome.SKIPPED, "not_pending"
                 else:
-                    outcome = Outcome.SUCCESS if result is not None else Outcome.FALLBACK
-        except Exception:
+                    outcome = Outcome.SUCCESS if answer.output is not None else Outcome.FALLBACK
+        except Exception as exc:
+            error_type, status_code = _describe_error(exc)
             logger.exception("triage_error", extra={"ticket_id": str(ticket_id)})
         logger.info(
             "triage_outcome",
@@ -73,6 +102,8 @@ class TriageRunner:
                 "ticket_id": str(ticket_id),
                 "outcome": outcome.value,
                 "reason": reason,
+                "error_type": error_type,
+                "status_code": status_code,
                 "latency_ms": int((time.monotonic() - started) * 1000),
                 "model": self._model.name,
                 "prompt_version": PROMPT_VERSION,
@@ -92,23 +123,24 @@ class TriageRunner:
             categories = [CategoryOption(c.id, c.name, c.description) for c in rows]
             return _Snapshot(TicketText(ticket.title, ticket.description), categories)
 
-    async def _ask_model(self, snapshot: _Snapshot) -> tuple[TriageOutput | None, str | None]:
+    async def _ask_model(self, snapshot: _Snapshot) -> _ModelAnswer:
         try:
             raw = await asyncio.wait_for(
                 self._model.classify(snapshot.ticket, snapshot.categories), self._timeout
             )
-        except TimeoutError:
-            return None, "timeout"
-        except Exception:
-            return None, "model_error"
+        except TimeoutError as exc:
+            return _ModelAnswer(None, "timeout", type(exc).__name__)
+        except Exception as exc:
+            error_type, status_code = _describe_error(exc)
+            return _ModelAnswer(None, "model_error", error_type, status_code)
         try:
             result = parse_output(raw)
         except InvalidTriageOutputError:
-            return None, "invalid_output"
+            return _ModelAnswer(None, "invalid_output")
         allowed = {c.id for c in snapshot.categories}
         if result.category_id is not None and result.category_id not in allowed:
-            return None, "invalid_output"
-        return result, None
+            return _ModelAnswer(None, "invalid_output")
+        return _ModelAnswer(result)
 
     async def _apply(
         self, ticket_id: uuid.UUID, result: TriageOutput | None, reason: str | None

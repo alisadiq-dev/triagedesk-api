@@ -6,7 +6,13 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import select, text
 
-from app.ai.interface import CategoryOption, DisabledTriageModel, TicketText, TriageModel
+from app.ai.interface import (
+    CategoryOption,
+    DisabledTriageModel,
+    TicketText,
+    TriageModel,
+    TriageModelError,
+)
 from app.ai.prompts import PROMPT_VERSION
 from app.ai.triage import Outcome, TriageRunner
 from app.core.config import Settings
@@ -397,3 +403,86 @@ async def test_a_failure_while_saving_is_logged_and_never_raised_and_the_ticket_
     assert (await fresh(world, ticket_id)).ai_status == AiStatus.PENDING
     outcomes = [r.__dict__["outcome"] for r in caplog.records if r.getMessage() == "triage_outcome"]
     assert outcomes == ["failed"]
+
+
+# --- the cause of a model failure is logged as a type and a status code, never as content ------
+
+
+class HttpLikeError(Exception):
+    """Like an HTTP client error: carries a status code and a message that must never be logged."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__("provider said: key AIza-SECRET-KEY, ticket SECRET-BODY")
+        self.status_code = status
+
+
+async def outcome_fields(
+    world: World,
+    make_runner: RunnerFactory,
+    caplog: pytest.LogCaptureFixture,
+    model: TriageModel,
+) -> dict[str, object]:
+    ticket = await make_ticket(
+        world.session, world.ids["customer"], title="SECRET-TITLE", description="SECRET-BODY"
+    )
+    runner, _ = make_runner(model)
+    with caplog.at_level(logging.INFO, logger="app.ai"):
+        await runner.run(ticket.id)
+    [record] = [r for r in caplog.records if r.getMessage() == "triage_outcome"]
+    assert "SECRET" not in caplog.text and "AIza" not in caplog.text
+    return dict(record.__dict__)
+
+
+async def test_a_model_exception_is_logged_by_type_only(
+    world: World, make_runner: RunnerFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    model = ScriptedModel(error=ValueError("SECRET-BODY AIza-SECRET-KEY"))
+
+    fields = await outcome_fields(world, make_runner, caplog, model)
+
+    assert fields["reason"] == "model_error"
+    assert fields["error_type"] == "ValueError"
+    assert fields["status_code"] is None
+
+
+async def test_an_http_status_is_logged_as_a_number(
+    world: World, make_runner: RunnerFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    fields = await outcome_fields(
+        world, make_runner, caplog, ScriptedModel(error=HttpLikeError(503))
+    )
+
+    assert (fields["error_type"], fields["status_code"]) == ("HttpLikeError", 503)
+
+
+async def test_a_wrapped_provider_error_keeps_the_original_type_and_status(
+    world: World, make_runner: RunnerFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    error = TriageModelError("gemini api error 429", status_code=429, cause_type="ClientError")
+
+    fields = await outcome_fields(world, make_runner, caplog, ScriptedModel(error=error))
+
+    assert (fields["error_type"], fields["status_code"]) == ("ClientError", 429)
+
+
+async def test_a_timeout_is_logged_with_its_type(
+    world: World, make_runner: RunnerFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    ticket = await make_ticket(world.session, world.ids["customer"])
+    runner, _ = make_runner(ScriptedModel(good_answer(None), delay=1.0), timeout=0.05)
+    with caplog.at_level(logging.INFO, logger="app.ai"):
+        await runner.run(ticket.id)
+
+    [record] = [r for r in caplog.records if r.getMessage() == "triage_outcome"]
+    assert (record.__dict__["reason"], record.__dict__["error_type"]) == ("timeout", "TimeoutError")
+
+
+async def test_invalid_output_and_success_log_no_error_type(
+    world: World, make_runner: RunnerFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    bad = await outcome_fields(world, make_runner, caplog, ScriptedModel({"nope": 1}))
+    caplog.clear()
+    good = await outcome_fields(world, make_runner, caplog, ScriptedModel(good_answer(None)))
+
+    assert (bad["reason"], bad["error_type"], bad["status_code"]) == ("invalid_output", None, None)
+    assert (good["error_type"], good["status_code"]) == (None, None)

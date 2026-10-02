@@ -19,7 +19,18 @@ class CategoryOption:
 
 
 class TriageModelError(Exception):
-    """The model could not be used (not configured, network error, refused, ...)."""
+    """The model could not be used (not configured, network error, refused, ...).
+
+    `status_code` and `cause_type` describe a wrapped provider error for the logs: an HTTP status
+    and the name of the original exception class. Never the provider's message (not ours to log).
+    """
+
+    def __init__(
+        self, message: str, *, status_code: int | None = None, cause_type: str | None = None
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.cause_type = cause_type
 
 
 class TriageModel(Protocol):
