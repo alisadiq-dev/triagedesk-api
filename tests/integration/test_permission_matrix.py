@@ -127,6 +127,7 @@ MATRIX = [
         409,
     ),
     route("GET", "/api/v1/tickets/{ticket_id}/events", None, "assigned", 403, 404, 200, 404, 200),
+    route("GET", "/api/v1/tickets/{ticket_id}/sla", None, "assigned", 403, 404, 200, 404, 200),
     route("GET", "/api/v1/tickets/{ticket_id}/comments", None, "assigned", 200, 404, 200, 404, 200),
     route(
         "POST",

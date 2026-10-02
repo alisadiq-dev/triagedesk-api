@@ -176,3 +176,9 @@ proposed but not built until approved.
 - [x] P5.7 Gemini adapter (`google-genai==2.27.0`, approved 2026-10-02; `GEMINI_MODEL` default `gemini-3.5-flash-lite`), checked against the SDK docs, one live call with a fake ticket.
 - [x] P5.8 Stuck-pending fix proposed in docs/adr/0006-recover-stuck-pending-triage.md (accepted 2026-10-02).
 - [x] P5.9 Recovery sweeper built as accepted: startup plus every 60 s, pending older than 120 s, max 10 per run, advisory lock, env flag and numbers, one log line per run.
+
+## Phase 6: SLA status (endpoint 19)
+
+The breach rule (SQL expression and Python property that agree) and policy handling were built in Phases 1, 3 and 5.
+- [x] P6.1 `GET /tickets/{id}/sla` (A visible, X; customer 403 on own, 404 on another's) returning `SlaStatus`; per-clock breach flags from the same rule as `sla_breached`; matrix extended; tests for in-time, missed first response, response given, missed resolution, resolved late, reopened, comment-driven first response, closed ticket.
+- [x] P6.2 Phase close: checks, five-axis review, progress, PR, CI green, merge.

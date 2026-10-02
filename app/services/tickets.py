@@ -133,6 +133,11 @@ class TicketService:
         require_role(self._actor, Role.AGENT, Role.ADMIN)
         return await self._events.list_page(ticket_id, page.offset, page.page_size)
 
+    async def get_for_sla(self, ticket_id: uuid.UUID) -> Ticket:
+        ticket, _ = await self.get(ticket_id)  # 404 when the ticket is not visible
+        require_role(self._actor, Role.AGENT, Role.ADMIN)
+        return ticket
+
     async def claim(self, ticket_id: uuid.UUID) -> TicketRow:
         ticket, _ = await self.get(ticket_id)
         if self._actor.role == Role.CUSTOMER or ticket.customer_id == self._actor.id:

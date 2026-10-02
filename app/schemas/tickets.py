@@ -82,6 +82,28 @@ class TicketEventOut(BaseModel):
     created_at: datetime
 
 
+class SlaStatus(BaseModel):
+    first_response_due_at: datetime
+    resolution_due_at: datetime
+    first_responded_at: datetime | None
+    resolved_at: datetime | None
+    first_response_breached: bool
+    resolution_breached: bool
+    breached: bool
+
+    @classmethod
+    def from_ticket(cls, ticket: Ticket, now: datetime) -> "SlaStatus":
+        return cls(
+            first_response_due_at=ticket.first_response_due_at,
+            resolution_due_at=ticket.resolution_due_at,
+            first_responded_at=ticket.first_responded_at,
+            resolved_at=ticket.resolved_at,
+            first_response_breached=ticket.first_response_breached_at(now),
+            resolution_breached=ticket.resolution_breached_at(now),
+            breached=ticket.is_breached_at(now),
+        )
+
+
 class AssigneeUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

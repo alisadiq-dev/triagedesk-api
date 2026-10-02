@@ -249,3 +249,22 @@ pyasn1, certifi, charset-normalizer, urllib3, distro, sniffio and others; pip-au
 | Architecture | SQL for lookup and locks lives in `TicketRepository` | Info | As designed |
 | Security | Prompt is data-only (unchanged); provider message never kept; secrets from env only | Info | OK |
 | Performance | One indexed query per sweep (`ai_status`, `created_at`); at most 10 model calls per minute | Info | Measure in Phase 7 if needed |
+
+## Phase 6: SLA status (done)
+
+Delivered: `GET /api/v1/tickets/{id}/sla` (endpoint 19). It returns the four SLA timestamps and `first_response_breached`,
+`resolution_breached` and `breached`. Both flags use the same Python rule as the `sla_breached` field on `StaffTicket` (now split
+into two small methods on `Ticket`; the existing test that checks the SQL expression against the Python rule still passes).
+A late first response is not a breach once given (PRD section 8 defines breach as "no response and past due"). The clock does not
+pause in `waiting_on_customer` and a reopened ticket keeps its deadline (known limitations in the PRD).
+
+Checks: 629 tests, coverage 96% on `app/services` and `app/ai`, ruff, mypy clean; every role is in the permission matrix.
+
+### Five-axis self-review
+| Axis | Finding | Severity | Status |
+|---|---|---|---|
+| Correctness | The two flags and the total come from one method pair, so they cannot disagree | Info | Tested |
+| Readability | Small additions to the existing service and schema | Info | OK |
+| Architecture | No new SQL: the endpoint reads the already loaded ticket | Info | OK |
+| Security | Same 404 then 403 order as the events endpoint; customers get 403 on their own ticket, 404 on others | Info | Matrix |
+| Performance | One ticket read, no extra queries | Info | OK |
