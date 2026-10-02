@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Ticket
+from app.models import Ticket, TicketEvent
 from app.models.enums import (
     CategorySource,
     EventType,
@@ -28,6 +28,7 @@ from app.services.errors import (
 from app.services.permissions import Actor, ForbiddenError, require_role
 from app.services.sla import compute_deadlines, policy_for
 from app.services.visibility import ticket_visibility
+from app.services.workflow import check_transition
 
 
 class TicketService:
@@ -104,6 +105,33 @@ class TicketService:
             ticket.priority_source = PrioritySource.HUMAN
         await self._session.commit()
         return await self.get(ticket_id)
+
+    async def change_status(self, ticket_id: uuid.UUID, target: TicketStatus) -> TicketRow:
+        ticket = await self._ticket_for_staff_change(ticket_id)  # 404, 403, 409 closed
+        check_transition(ticket.status, target)  # 409 invalid_transition
+        previous = ticket.status
+        if previous == TicketStatus.RESOLVED and target == TicketStatus.IN_PROGRESS:
+            # Reopen: clear resolved_at, but keep the old value in the audit log.
+            self._events.add(
+                ticket.id, self._actor.id, EventType.RESOLVED_AT_CLEARED,
+                _text(ticket.resolved_at.isoformat() if ticket.resolved_at else None), None,
+            )  # fmt: skip
+            ticket.resolved_at = None
+        if target == TicketStatus.RESOLVED:
+            ticket.resolved_at = datetime.now(UTC)
+        ticket.status = target
+        self._events.add(
+            ticket.id, self._actor.id, EventType.STATUS_CHANGED, previous.value, target.value
+        )
+        await self._session.commit()
+        return await self.get(ticket_id)
+
+    async def list_events(
+        self, ticket_id: uuid.UUID, page: PageParams
+    ) -> tuple[list[TicketEvent], int]:
+        await self.get(ticket_id)  # 404 when the ticket is not visible
+        require_role(self._actor, Role.AGENT, Role.ADMIN)
+        return await self._events.list_page(ticket_id, page.offset, page.page_size)
 
     async def claim(self, ticket_id: uuid.UUID) -> TicketRow:
         ticket, _ = await self.get(ticket_id)

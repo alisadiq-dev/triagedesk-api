@@ -1,7 +1,7 @@
 import enum
 import uuid
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 
@@ -9,6 +9,7 @@ from app.models import Ticket
 from app.models.enums import (
     AiStatus,
     CategorySource,
+    EventType,
     Priority,
     PrioritySource,
     Role,
@@ -55,6 +56,30 @@ class TicketOverrides(BaseModel):
         if self.category_id is None and self.priority is None:
             raise ValueError("provide category_id or priority")
         return self
+
+
+class StatusChange(BaseModel):
+    """The new status. `open` is never a target: tickets only start there."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal[
+        TicketStatus.IN_PROGRESS,
+        TicketStatus.WAITING_ON_CUSTOMER,
+        TicketStatus.RESOLVED,
+        TicketStatus.CLOSED,
+    ]
+
+
+class TicketEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_type: EventType
+    actor_id: uuid.UUID | None
+    from_value: str | None
+    to_value: str | None
+    created_at: datetime
 
 
 class AssigneeUpdate(BaseModel):

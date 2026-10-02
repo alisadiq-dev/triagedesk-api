@@ -1,5 +1,6 @@
 import uuid
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import TicketEvent
@@ -28,3 +29,18 @@ class EventRepository:
                 to_value=to_value,
             )
         )
+
+    async def list_page(
+        self, ticket_id: uuid.UUID, offset: int, limit: int
+    ) -> tuple[list[TicketEvent], int]:
+        total = await self._session.scalar(
+            select(func.count()).select_from(TicketEvent).where(TicketEvent.ticket_id == ticket_id)
+        )
+        rows = await self._session.scalars(
+            select(TicketEvent)
+            .where(TicketEvent.ticket_id == ticket_id)
+            .order_by(TicketEvent.id)
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(rows), total or 0

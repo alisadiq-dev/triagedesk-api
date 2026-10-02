@@ -138,3 +138,33 @@ Test gaps closed: real role-change in the matrix, race tests for claim, role cha
 ### Not verified
 Concurrency behaviour is tested on one Postgres 17 instance with two connections; deadlock freedom relies on the fixed lock order
 (admins by id, then target) and was not stress-tested.
+
+## Phase 4: Status workflow and audit log (done)
+
+Delivered: the transition table as a pure function (all 25 status pairs tested), `POST /tickets/{id}/status` (endpoint 14) and
+`GET /tickets/{id}/events` (endpoint 18). Valid: open to in_progress; in_progress to waiting_on_customer or resolved;
+waiting_on_customer to in_progress; resolved to closed or in_progress (reopen). Everything else is 409 `invalid_transition` with a
+message naming both statuses and what is allowed; a closed ticket is 409 `ticket_closed`. `resolved_at` is set on resolve, kept on
+close and cleared on reopen (the old value is kept in a `resolved_at_cleared` event). Every change writes its event in the same
+transaction (tested by making the audit write fail: the status does not change).
+
+Checks: 510 tests (every valid and invalid transition through the API, the lifecycle audit trail, permissions, a concurrent
+double change gives one 200, one 409 and one event, matrix extended to 20 routes), ruff and mypy clean, pip-audit clean.
+
+### Doubt pass (workflow and audit)
+| Claim | Doubt | Result |
+|---|---|---|
+| Status and audit row are atomic | Event written separately or after commit | Both in one transaction; failure test proves rollback |
+| Two clients cannot double-apply a change | Check-then-act race | Ticket row locked (FOR NO KEY UPDATE) before the check; concurrent test: one 200, one 409, one event |
+| Reopen keeps SLA honest | Cleared `resolved_at` loses history; breach vanishes | History kept in the event; reopened ticket past its deadline shows `sla_breached` (tested) |
+| `closed` is final | Any path out of closed | All four targets give 409 `ticket_closed` (tested) |
+| Customers never change status | Customer-owned ticket is visible | 403 on own, 404 on others (tested, plus matrix) |
+
+### Five-axis self-review
+| Axis | Finding | Severity | Status |
+|---|---|---|---|
+| Correctness | Same-status requests (for example in_progress to in_progress) are 409, not a silent no-op | Info | Intentional, tested |
+| Readability | Workflow table is separate from the service, so the rules read in one place | Info | As designed |
+| Architecture | `TicketService` now covers read, change and workflow; still one method per use case | Low | Revisit if Phase 5 or 6 add more |
+| Security | Same 404, 403, 409 order and locking as Phase 3; no new input beyond an enum | Info | OK |
+| Performance | Events list is indexed by `(ticket_id, created_at)`; paginated | Info | Measured in Phase 7 |

@@ -12,7 +12,9 @@ from app.schemas.tickets import (
     AssigneeUpdate,
     CustomerTicket,
     StaffTicket,
+    StatusChange,
     TicketCreate,
+    TicketEventOut,
     TicketOverrides,
     TicketSort,
     render_staff_ticket,
@@ -121,3 +123,24 @@ async def add_comment(
     if actor.role == Role.CUSTOMER:
         return CustomerComment.from_comment(comment)
     return StaffComment.model_validate(comment)
+
+
+@router.post("/{ticket_id}/status", response_model=None)
+async def change_status(
+    ticket_id: uuid.UUID, body: StatusChange, actor: ActorDep, service: Service
+) -> CustomerTicket:
+    ticket, email = await service.change_status(ticket_id, body.status)
+    return render_ticket(actor, ticket, email)
+
+
+@router.get("/{ticket_id}/events")
+async def list_events(
+    ticket_id: uuid.UUID, service: Service, page: PageParamsDep
+) -> Page[TicketEventOut]:
+    events, total = await service.list_events(ticket_id, page)
+    return Page[TicketEventOut](
+        items=[TicketEventOut.model_validate(e) for e in events],
+        page=page.page,
+        page_size=page.page_size,
+        total=total,
+    )
