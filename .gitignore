@@ -26,3 +26,5 @@ htmlcov/
 supabase/signing_keys.json
 supabase/.temp/
 supabase/.branches/
+supabase/demo_users.json
+backups/

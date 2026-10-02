@@ -1,12 +1,14 @@
 """Live check against the local Supabase stack (`supabase start`): not part of the test suite.
 
-Signs up a throwaway user, then verifies the issued token with our JwtTokenVerifier and reports only
-non-secret facts (algorithm, kid, aud, iss, claim names). Reads the publishable key from the
-SUPABASE_PUBLISHABLE_KEY env var and never prints it or the token.
+Checks that open signup is refused, creates a throwaway user with the admin API, then verifies the
+issued token with our JwtTokenVerifier and reports only non-secret facts (algorithm, kid, aud, iss,
+claim names). Reads SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY from the environment and never
+prints them or the token.
 """
 
 import asyncio
 import os
+import secrets
 import sys
 import uuid
 
@@ -32,18 +34,38 @@ async def main() -> int:
     )
     base = settings.supabase_url.rstrip("/")
     headers = {"apikey": key, "User-Agent": USER_AGENT}
+    secret = os.environ.get("SUPABASE_SECRET_KEY", "")
+    print(f"secret key length: {len(secret)}")
+    if not secret:
+        print("SUPABASE_SECRET_KEY is not set")
+        return 2
     email = f"live-check-{uuid.uuid4().hex[:8]}@example.com"
+    password = secrets.token_urlsafe(18)
     async with httpx2.AsyncClient(timeout=10, headers=headers) as client:
         jwks = (await client.get(f"{base}/auth/v1/.well-known/jwks.json")).json()
         print(
             "jwks keys:",
             [(k.get("kty"), k.get("crv"), k.get("alg"), k.get("kid")) for k in jwks["keys"]],
         )
-        response = await client.post(
-            f"{base}/auth/v1/signup", json={"email": email, "password": "live-check-password-1"}
+        # Signups are off (supabase/config.toml): an open signup must be refused.
+        refused = await client.post(
+            f"{base}/auth/v1/signup", json={"email": email, "password": password}
         )
-        print("signup status:", response.status_code)
+        print("open signup status (expect 4xx):", refused.status_code)
+        admin = {"apikey": secret, "Authorization": f"Bearer {secret}"}
+        created = await client.post(
+            f"{base}/auth/v1/admin/users",
+            json={"email": email, "password": password, "email_confirm": True},
+            headers=admin,
+        )
+        print("admin create user status:", created.status_code)
+        user_id = created.json().get("id", "")
+        response = await client.post(
+            f"{base}/auth/v1/token?grant_type=password", json={"email": email, "password": password}
+        )
+        print("password sign-in status:", response.status_code)
         token = response.json().get("access_token", "")
+        await client.delete(f"{base}/auth/v1/admin/users/{user_id}", headers=admin)  # clean up
     print(f"token length: {len(token)}")
     header = jwt.get_unverified_header(token)
     payload = jwt.decode(token, options={"verify_signature": False})
