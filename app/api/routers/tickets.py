@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_actor, get_session
 from app.models.enums import Role, TicketStatus
+from app.schemas.comments import CommentCreate, CustomerComment, StaffComment
 from app.schemas.common import Page, PageParamsDep
 from app.schemas.tickets import (
     AssigneeUpdate,
@@ -16,6 +17,7 @@ from app.schemas.tickets import (
     TicketSort,
     render_ticket,
 )
+from app.services.comments import CommentService
 from app.services.permissions import Actor
 from app.services.tickets import TicketService
 
@@ -92,3 +94,29 @@ async def assign_ticket(
 ) -> CustomerTicket:
     ticket, email = await service.assign(ticket_id, body.assignee_id)
     return render_ticket(actor.role, ticket, email)
+
+
+@router.get("/{ticket_id}/comments", response_model=None)
+async def list_comments(
+    ticket_id: uuid.UUID, actor: ActorDep, session: SessionDep, page: PageParamsDep
+) -> Page[CustomerComment] | Page[StaffComment]:
+    comments, total = await CommentService(session, actor).list_comments(ticket_id, page)
+    if actor.role == Role.CUSTOMER:
+        customer_items = [CustomerComment.from_comment(c) for c in comments]
+        return Page[CustomerComment](
+            items=customer_items, page=page.page, page_size=page.page_size, total=total
+        )
+    staff_items = [StaffComment.model_validate(c) for c in comments]
+    return Page[StaffComment](
+        items=staff_items, page=page.page, page_size=page.page_size, total=total
+    )
+
+
+@router.post("/{ticket_id}/comments", status_code=201, response_model=None)
+async def add_comment(
+    ticket_id: uuid.UUID, body: CommentCreate, actor: ActorDep, session: SessionDep
+) -> CustomerComment | StaffComment:
+    comment = await CommentService(session, actor).add_comment(ticket_id, body)
+    if actor.role == Role.CUSTOMER:
+        return CustomerComment.from_comment(comment)
+    return StaffComment.model_validate(comment)
