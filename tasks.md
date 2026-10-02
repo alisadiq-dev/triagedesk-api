@@ -86,8 +86,7 @@ Full tests and checks, five-axis self-review with severity labels, one simplific
 
 ## Phase 1: Data model, Alembic, first migration, seed
 
-CHECKPOINT: the proposal in `docs/data-model.md` must be approved by the owner before any model or migration code is written.
-Tasks below start only after that approval.
+Data model approved 2026-10-02 (see `docs/data-model.md`). Carried to Phase 3: the role-change endpoint writes one structured log line (actor, target, old role, new role, request id), with a test.
 
 ### P1.1 Alembic async setup
 - Do: `alembic init -t async` (checked against current Alembic docs), `env.py` reads the DB URL from Settings, naming convention for constraints and indexes.

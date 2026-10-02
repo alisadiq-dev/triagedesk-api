@@ -1,6 +1,9 @@
-# Data model and first migration: PROPOSAL (awaiting owner approval)
+# Data model and first migration: APPROVED (2026-10-02)
 
-No model or migration code exists yet. Everything here follows `docs/PRD.md`.
+Owner approved all eight decisions as proposed. Addition: role changes are not audited in a table, but every role change writes one structured
+log line (actor id, target id, old role, new role, request id), with a test. That lands with the role-change endpoint (Phase 3).
+
+Everything here follows `docs/PRD.md`.
 
 ## Conventions
 

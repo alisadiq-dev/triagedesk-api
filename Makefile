@@ -16,7 +16,7 @@ lint:
 	$(BIN)mypy
 
 migrate:
-	@echo "make migrate: available from Phase 1 (Alembic is not set up yet)."
+	$(BIN)alembic upgrade head
 
 seed:
 	@echo "make seed: available from Phase 1 (no tables to seed yet)."
