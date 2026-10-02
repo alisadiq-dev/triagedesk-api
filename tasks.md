@@ -182,3 +182,15 @@ proposed but not built until approved.
 The breach rule (SQL expression and Python property that agree) and policy handling were built in Phases 1, 3 and 5.
 - [x] P6.1 `GET /tickets/{id}/sla` (A visible, X; customer 403 on own, 404 on another's) returning `SlaStatus`; per-clock breach flags from the same rule as `sla_breached`; matrix extended; tests for in-time, missed first response, response given, missed resolution, resolved late, reopened, comment-driven first response, closed ticket.
 - [x] P6.2 Phase close: checks, five-axis review, progress, PR, CI green, merge.
+
+## Phase 7: List filters, N+1 guard, performance baseline
+
+Contract (endpoint 11) already lists the filters. Decisions I made inside it (recorded in `docs/api-contract.md`):
+customers get 403 on staff-only filters (a priority or category filter would reveal fields they must not see); `assignee_id` is
+admin-only (403 otherwise); `unassigned` with `assignee_id` is 422; `created_after` is inclusive and `created_before` exclusive,
+both must carry a timezone (422 otherwise); `q` is a full-text search over title and description (`plainto_tsquery`, 1 to 200 characters).
+
+- [ ] P7.1 Filters `priority`, `category_id`, `assignee_id` (X), `unassigned`, `sla_breached` (SQL expression), `q`, `created_after`, `created_before`, with tests for each, combinations, role rules, totals and pagination.
+- [ ] P7.2 Query-count test (constraint 8): the list endpoints run the same number of queries for 1 row and for 30 rows, for every role and with filters on.
+- [ ] P7.3 Benchmark script on a throwaway database with 10,000 tickets: p50/p95/p99 for the list endpoint, `EXPLAIN ANALYZE` with and without indexes, recorded in `docs/performance.md`.
+- [ ] P7.4 Set the constraint 10 number from the measurement (flagged to the owner), phase close.

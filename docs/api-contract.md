@@ -119,3 +119,13 @@ These tighten the approved contract; no endpoint, schema field or status code wa
 - Demoting an admin is blocked (409 `role_change_blocked`) if it would leave no admin. Role changes, claims and assignments lock the affected profile rows, so they cannot slip past each other.
 - A category PATCH rejects `null` for `name` and `is_active` (422). `description: null` clears the description.
 - Internal notes remain readable by any agent who can see the ticket, including after a release (the contract says "A (visible)").
+
+## Clarifications for the Phase 7 list filters (2026-10-02)
+
+These fill in endpoint 11 without adding endpoints or fields.
+- Customers get 403 `forbidden` if they send `priority`, `category_id`, `unassigned` or `sla_breached`: a filter on a field they may not see would reveal it. They can use `status`, `q`, `created_after`, `created_before`, `page`, `page_size` and the two sorts allowed to them, always limited to their own tickets.
+- `assignee_id` is admin-only: 403 for customers and agents. `unassigned` together with `assignee_id` is 422.
+- Filters only narrow the visible set; they never widen it (an agent still sees only unassigned tickets and their own).
+- `created_after` is inclusive, `created_before` is exclusive. Both must include a timezone (naive values are 422).
+- `q` is 1 to 200 characters, matched against title and description with PostgreSQL full-text search (`plainto_tsquery`, English configuration), so operators and punctuation are plain text.
+- `sla_breached=true|false` uses the same breach rule as the `sla_breached` field. `total` always reflects all filters.

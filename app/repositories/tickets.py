@@ -1,12 +1,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, exists, func, select, text, update
+from sqlalchemy import ColumnElement, exists, func, not_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Profile, Ticket
 from app.models.enums import AiStatus, TicketStatus
-from app.schemas.tickets import TicketSort
+from app.schemas.tickets import TicketFilters, TicketSort
 
 _SORT_COLUMNS = {
     TicketSort.NEWEST: Ticket.created_at.desc(),
@@ -16,6 +16,33 @@ _SORT_COLUMNS = {
 }
 
 TicketRow = tuple[Ticket, str | None]
+
+
+def _filter_conditions(filters: TicketFilters) -> list[ColumnElement[bool]]:
+    conditions: list[ColumnElement[bool]] = []
+    if filters.status is not None:
+        conditions.append(Ticket.status == filters.status)
+    if filters.priority is not None:
+        conditions.append(Ticket.priority == filters.priority)
+    if filters.category_id is not None:
+        conditions.append(Ticket.category_id == filters.category_id)
+    if filters.assignee_id is not None:
+        conditions.append(Ticket.assignee_id == filters.assignee_id)
+    if filters.unassigned is not None:
+        conditions.append(
+            Ticket.assignee_id.is_(None) if filters.unassigned else Ticket.assignee_id.is_not(None)
+        )
+    if filters.sla_breached is not None:
+        breached = Ticket.breached_clause()
+        conditions.append(breached if filters.sla_breached else not_(breached))
+    if filters.q is not None:
+        # plainto_tsquery treats the text as plain words, never as query syntax.
+        conditions.append(Ticket.search_vector.op("@@")(func.plainto_tsquery("english", filters.q)))
+    if filters.created_after is not None:
+        conditions.append(Ticket.created_at >= filters.created_after)
+    if filters.created_before is not None:
+        conditions.append(Ticket.created_at < filters.created_before)
+    return conditions
 
 
 class TicketRepository:
@@ -47,19 +74,19 @@ class TicketRepository:
     async def list_page(
         self,
         visible: ColumnElement[bool],
-        status: TicketStatus | None,
+        filters: TicketFilters,
         sort: TicketSort,
         offset: int,
         limit: int,
     ) -> tuple[list[TicketRow], int]:
-        filters = [visible]
-        if status is not None:
-            filters.append(Ticket.status == status)
-        total = await self._session.scalar(select(func.count()).select_from(Ticket).where(*filters))
+        conditions = [visible, *_filter_conditions(filters)]
+        total = await self._session.scalar(
+            select(func.count()).select_from(Ticket).where(*conditions)
+        )
         query = (
             select(Ticket, Profile.email)
             .join(Profile, Profile.id == Ticket.customer_id)
-            .where(*filters)
+            .where(*conditions)
             .order_by(_SORT_COLUMNS[sort], Ticket.id)
             .offset(offset)
             .limit(limit)
