@@ -20,11 +20,13 @@ scenario after 10 warm-ups, one connection at a time. The script creates a throw
 | agent, default (unassigned or own) | 6.8 | 9.2 | 11.6 | 12.1 |
 | customer, default (own tickets) | 5.3 | 8.8 | 9.6 | 10.3 |
 
+Re-run after the Phase 8 hardening (rate limiting off in the benchmark, since it measures the endpoint): worst p95 19.6 ms (deep page), default list 10.1 ms.
+
 ## Constraint 10 (p95 target)
 
 Target: **p95 of 50 ms or less** for every list scenario above, on 10,000 tickets, measured this way. The worst measured p95 is the deep
 page (page 100 at page size 100, about 23 ms); the default list is about 10 ms. The target leaves roughly twice the worst case and five
-times the default as headroom for slower machines. This is a proposal: `CONSTRAINTS.md` keeps the target as TBD until the owner confirms the number.
+times the default as headroom for slower machines. Approved by the owner on 2026-10-02 and recorded in `CONSTRAINTS.md` with these conditions.
 
 ## What the time is made of
 
