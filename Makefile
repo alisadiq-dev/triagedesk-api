@@ -29,3 +29,31 @@ audit:
 bench:
 	docker compose up -d --wait test-db
 	PYTHONPATH=. BENCH_ADMIN_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:55432/postgres $(BIN)python scripts/benchmark_list.py
+
+# --- local production setup (docker-compose.prod.yml; see docs/runbook.md) ---
+PROD_ENV ?= $(HOME)/.secrets/triagedesk-prod.env
+PROD = docker compose $(if $(PROD_PROJECT),-p $(PROD_PROJECT)) --env-file $(PROD_ENV) -f docker-compose.prod.yml
+
+.PHONY: prod-up prod-down prod-logs prod-seed prod-backup prod-restore smoke
+
+prod-up:
+	$(PROD) up -d --build --wait
+
+prod-down:
+	$(PROD) down
+
+prod-logs:
+	$(PROD) logs -f --tail=100
+
+prod-seed:
+	$(PROD) run --rm app python -m app.seed
+
+prod-backup:
+	PROD_ENV=$(PROD_ENV) PROD_PROJECT=$(PROD_PROJECT) sh deploy/backup.sh
+
+prod-restore:
+	@test -n "$(FILE)" || (echo "usage: make prod-restore FILE=backups/<name>.dump" && exit 2)
+	PROD_ENV=$(PROD_ENV) PROD_PROJECT=$(PROD_PROJECT) sh deploy/restore.sh $(FILE)
+
+smoke:
+	PYTHONPATH=. $(BIN)python -m scripts.smoke_test

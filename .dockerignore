@@ -10,3 +10,7 @@ __pycache__
 tests
 docs
 *.md
+backups
+supabase
+deploy
+scripts

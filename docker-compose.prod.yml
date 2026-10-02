@@ -1,0 +1,118 @@
+# Local production setup (ADR 0005): the API behind Nginx with its own Postgres, all on this machine.
+# No TLS, no cloud. Start with:  make prod-up   (see docs/runbook.md)
+# Secrets come from an env file outside the repo (deploy/prod.env.example lists the names), never from this file.
+name: triagedesk-prod
+
+services:
+  db:
+    image: postgres:17.11
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: triagedesk
+      POSTGRES_USER: triagedesk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U triagedesk -d triagedesk"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+    # No ports: only the app (and docker compose exec) can reach the database.
+
+  migrate:
+    build: .
+    image: triagedesk-api:local
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://triagedesk:${POSTGRES_PASSWORD}@db:5432/triagedesk
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+
+  app:
+    build: .
+    image: triagedesk-api:local
+    restart: unless-stopped
+    # Exactly one worker: the rate limits are in process and per instance (see the README).
+    # --forwarded-allow-ips is the Nginx container's fixed address only, so X-Forwarded-For from anyone else is ignored.
+    command:
+      - uvicorn
+      - app.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --workers=1
+      - --proxy-headers
+      - --forwarded-allow-ips=${NGINX_IP:-172.29.77.10}
+      - --no-server-header
+      - --no-access-log
+    environment:
+      DATABASE_URL: postgresql+asyncpg://triagedesk:${POSTGRES_PASSWORD}@db:5432/triagedesk
+      BOOTSTRAP_ADMIN_SUB: ${BOOTSTRAP_ADMIN_SUB:-}
+      # Token issuer: the local Supabase stack on the host. `iss` is checked against SUPABASE_URL; the keys are
+      # fetched from the host address that this container can reach (plain http, local stack only).
+      SUPABASE_URL: ${SUPABASE_URL:-http://127.0.0.1:54321}
+      SUPABASE_JWKS_BASE_URL: ${SUPABASE_JWKS_BASE_URL:-http://host.docker.internal:54321}
+      SUPABASE_JWKS_ALLOW_PLAIN_HTTP: ${SUPABASE_JWKS_ALLOW_PLAIN_HTTP:-true}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      API_DOCS_ENABLED: "false"
+      RATE_LIMIT_ENABLED: "true"
+      AI_RECOVERY_ENABLED: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+    # No ports: Nginx is the only way in. The image has a /health check.
+
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.29.8-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${NGINX_PORT:-8080}:8080"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/triagedesk_proxy.conf:/etc/nginx/triagedesk_proxy.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      internal:
+        ipv4_address: ${NGINX_IP:-172.29.77.10}
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: ${PROD_SUBNET:-172.29.77.0/24}
+
+volumes:
+  pgdata:

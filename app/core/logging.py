@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import time
 import uuid
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -79,3 +80,58 @@ class RequestIdMiddleware:
             await self.app(scope, receive, send_with_request_id)
         finally:
             request_id_var.reset(token)
+
+
+access_logger = logging.getLogger("app.access")
+
+
+def _route_template(scope: Scope) -> str:
+    """The matched route with path values replaced by their names, or "unmatched".
+
+    The route object alone lacks the prefix of nested routers, so the template is rebuilt from the
+    request path: each segment equal to a path parameter's value becomes `{name}`. Unmatched paths
+    are never logged, because their text is chosen by the caller.
+    """
+    if scope.get("route") is None:
+        return "unmatched"
+    values = {str(value): name for name, value in scope.get("path_params", {}).items()}
+    segments = scope["path"].split("/")
+    return "/".join(f"{{{values[seg]}}}" if seg in values else seg for seg in segments)
+
+
+class AccessLogMiddleware:
+    """One structured line per request: method, route template, status, duration.
+
+    Never the query string, the path values, headers or bodies (they can hold search terms, ids or
+    tokens). Unmatched paths are logged as "unmatched". This replaces uvicorn's access log, which
+    prints the full request target (run uvicorn with --no-access-log).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = time.perf_counter()
+        status = 500
+
+        async def send_and_note_status(message: Message) -> None:
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_and_note_status)
+        finally:
+            access_logger.info(
+                "request",
+                extra={
+                    "method": scope["method"],
+                    "route": _route_template(scope),
+                    "status": status,
+                    "duration_ms": int((time.perf_counter() - started) * 1000),
+                },
+            )

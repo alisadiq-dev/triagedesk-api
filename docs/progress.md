@@ -337,3 +337,55 @@ Checks: 729 tests, coverage 96% on `app/services` and `app/ai`, ruff, mypy, pip-
 
 ### Not verified
 - Behaviour under real concurrent load, a real Nginx in front, Supabase signup settings, live Gemini behaviour with the cap, and `max_output_tokens` (not set on purpose).
+
+## Phase 9: Local production setup (done; owner approved the phase on 2026-10-02)
+
+Delivered:
+- `docker-compose.prod.yml`: `db` (Postgres 17.11, named volume, no published port), one-shot `migrate`, `app` (one uvicorn worker,
+  `--proxy-headers`, `--forwarded-allow-ips` = the Nginx container's fixed address only, `--no-access-log`, `--no-server-header`,
+  read-only root, non-root, all capabilities dropped), and `nginx` (unprivileged 1.29.8, `127.0.0.1` only). `deploy/nginx.conf`:
+  overwrites `X-Forwarded-For`, `client_max_body_size 64k`, only `/health`, `/ready` and `/api/v1/` reach the app (no docs), errors in
+  the API format, access log without the query string, one request id shared with the app.
+- `deploy/init_secrets.sh` (creates the secrets file once), `deploy/backup.sh` and `deploy/restore.sh` (`pg_dump` and `pg_restore`,
+  restore needs `RESTORE_CONFIRM=yes`), `make prod-up|prod-down|prod-logs|prod-seed|prod-backup|prod-restore|smoke`.
+- `scripts/smoke_test.py` (10 gateway checks plus an optional signed-in flow; its checks are unit-tested against a fake gateway with one
+  defect at a time), `docs/runbook.md`, CI checks for the compose file and the Nginx config.
+- Also in this phase, on the owner's decisions: `AI_MAX_OUTPUT_TOKENS` (a cut-off answer is a failure; one more live call verified it),
+  a structured access log with the route template only (tested: no query string, path values, headers or bodies), signups disabled on the
+  local Supabase stack (verified live), demo users through the admin API (`scripts/create_demo_users.py`, tested),
+  `SUPABASE_JWKS_BASE_URL` (the container fetches keys from the host while `iss` is still checked against the public issuer URL; plain
+  http to a non-loopback host needs `SUPABASE_JWKS_ALLOW_PLAIN_HTTP=true`).
+
+**Found by running it for real:** `GEMINI_API_KEY=` (empty, as in `.env.example` and the compose file) became an empty secret and the SDK
+crashed at startup. Fixed with a test: an empty or blank value means "not set" for the key and for the JWKS base URL.
+
+Checks: 768 tests, coverage 96% on `app/services` and `app/ai`, ruff, mypy, pip-audit clean.
+
+### Verified (throwaway Compose project with its own volume, port and subnet, removed afterwards)
+Build, migrations, seed, demo users and role promotion; `smoke_test --signed-in` through Nginx (14 checks, real Supabase tokens through
+`host.docker.internal`, background triage, spoofed `X-Forwarded-For` does not bypass the rate limit); logs hold no query strings and the
+request id matches between Nginx and the app; container settings; backup, refusal without confirmation, restore over modified data,
+and a total-loss restore into a brand-new volume followed by a passing smoke test.
+
+### Not verified
+Concurrent load; a Docker daemon or machine restart; the Gemini model inside the container (no key in the throwaway project);
+the real `triagedesk-prod` project (not started by me); Docker Desktop is the only platform tried.
+
+### Doubt pass (deployment)
+| Claim | Doubt | Result |
+|---|---|---|
+| Only Nginx can reach the app | A published port, or a client spoofing the forwarded address | No `ports` on app and db; spoof check passes through the real gateway; the app trusts one fixed address |
+| A restore cannot be run by accident | Typing the wrong command | Refuses without `RESTORE_CONFIRM=yes`; checks the file is readable before stopping anything |
+| A backup is usable | Empty or truncated dump | The script lists the archive with `pg_restore --list` before keeping it; the total-loss drill restored it and the app worked |
+| Secrets stay out of the repo and the logs | Compose file, env file, backups | Compose reads names only; the env file lives outside the repo (mode 600); `backups/` and `supabase/demo_users.json` are git-ignored; log check found no secrets |
+| Startup cannot be broken by empty settings | Empty env values | Found a real crash (above), fixed with a test |
+
+### Five-axis self-review
+| Axis | Finding | Severity | Status |
+|---|---|---|---|
+| Correctness | The empty-key crash above | Medium | Fixed |
+| Correctness | The first `docker compose up` can start `app` before the Supabase stack is up; requests then get 503 `auth_unavailable` until it is | Low | Documented in the runbook |
+| Readability | One compose file, one Nginx file, three short shell scripts | Info | OK |
+| Architecture | The Nginx address is fixed (a subnet in the compose file) so the app can trust exactly one proxy | Info | Env-configurable for a second project |
+| Security | Plain http between the API container and the Supabase stack on the host, behind an explicit allow flag, local only (ADR 0005) | Low | Accepted |
+| Performance | One worker, per-instance limits | Info | Documented, by decision |

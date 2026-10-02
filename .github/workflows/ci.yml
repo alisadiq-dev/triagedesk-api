@@ -31,5 +31,14 @@ jobs:
           alembic upgrade head
           alembic downgrade base
           alembic upgrade head
+      - name: Production compose file and Nginx config are valid
+        env:
+          POSTGRES_PASSWORD: ci-not-a-secret
+        run: |
+          docker compose -f docker-compose.prod.yml config -q
+          docker run --rm \
+            -v "$PWD/deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            -v "$PWD/deploy/triagedesk_proxy.conf:/etc/nginx/triagedesk_proxy.conf:ro" \
+            nginxinc/nginx-unprivileged:1.29.8-alpine nginx -t
       - name: Dependency audit
         run: make audit BIN=

@@ -140,3 +140,39 @@ async def test_audience_list_containing_ours_is_accepted() -> None:
     user = await verifier().verify(sign(KEY, claims(aud=[AUDIENCE, "another"])))
 
     assert user.id == uuid.UUID(USER_ID)
+
+
+# --- build_verifier: keys come from the JWKS base, the issuer stays the public one -------------
+
+
+def test_keys_are_fetched_from_the_jwks_base_url_but_the_issuer_stays_the_public_url() -> None:
+    from pydantic import SecretStr
+
+    from app.core.config import Settings
+    from app.core.jwt_auth import build_verifier
+
+    settings = Settings(
+        _env_file=None,
+        database_url=SecretStr("postgresql+asyncpg://x/y"),
+        supabase_url="http://127.0.0.1:54321",
+        supabase_jwks_base_url="http://host.docker.internal:54321",
+        supabase_jwks_allow_plain_http=True,
+    )
+
+    verifier = build_verifier(settings)
+
+    assert verifier.issuer == "http://127.0.0.1:54321/auth/v1"
+    assert verifier.jwks_url == "http://host.docker.internal:54321/auth/v1/.well-known/jwks.json"
+
+
+def test_without_an_override_keys_come_from_the_issuer() -> None:
+    from pydantic import SecretStr
+
+    from app.core.config import Settings
+    from app.core.jwt_auth import build_verifier
+
+    settings = Settings(_env_file=None, database_url=SecretStr("postgresql+asyncpg://x/y"))
+
+    verifier = build_verifier(settings)
+
+    assert verifier.jwks_url == f"{verifier.issuer}/.well-known/jwks.json"

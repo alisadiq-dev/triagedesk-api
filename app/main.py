@@ -18,7 +18,7 @@ from app.core.hardening import (
     SecurityHeadersMiddleware,
 )
 from app.core.jwt_auth import JwtTokenVerifier
-from app.core.logging import RequestIdMiddleware, configure_logging
+from app.core.logging import AccessLogMiddleware, RequestIdMiddleware, configure_logging
 from app.core.security import TokenVerifier
 
 
@@ -75,9 +75,11 @@ def create_app(
     app.state.triage_runner = None
     app.state.recovery_task = None
     app.state.rate_limits = None
+    # Innermost first: each later one wraps the earlier ones.
     app.add_middleware(RateLimitMiddleware, get_limits=lambda: ensure_rate_limits(app))
-    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(BodyLimitMiddleware, max_bytes=hardening.max_request_body_bytes)
+    app.add_middleware(AccessLogMiddleware)
+    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     register_error_handlers(app)
     app.include_router(health.router)

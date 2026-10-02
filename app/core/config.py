@@ -2,7 +2,7 @@ import uuid
 from functools import lru_cache
 from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -35,11 +35,17 @@ class Settings(HardeningSettings):
     # Token issuer: the local Supabase stack (`supabase start`). See docs/local-supabase.md.
     supabase_url: str = "http://127.0.0.1:54321"
     supabase_jwt_audience: str = "authenticated"
+    # Where to fetch the signing keys when that differs from the issuer address (the API runs in a
+    # container and the Supabase stack on the host). The `iss` claim is still checked against
+    # SUPABASE_URL. Plain http to a non-loopback host needs the explicit allow flag (local only).
+    supabase_jwks_base_url: str | None = None
+    supabase_jwks_allow_plain_http: bool = False
     jwks_timeout_seconds: float = Field(default=3.0, gt=0)
     jwks_cache_seconds: int = Field(default=300, gt=0)
     jwks_min_refetch_seconds: int = Field(default=30, gt=0)
     ai_timeout_seconds: float = Field(default=15.0, gt=0)
     # Global cap on model calls per minute; over it, tickets take the keyword fallback.
+    ai_max_output_tokens: int = Field(default=1024, gt=0)  # a cut-off answer takes the fallback
     ai_calls_per_minute: int = Field(default=60, gt=0)
     # Gemini adapter: without a key, triage always takes the keyword fallback.
     gemini_api_key: SecretStr | None = None
@@ -61,6 +67,28 @@ class Settings(HardeningSettings):
         ):
             return value
         raise ValueError("must use https (plain http is only allowed for loopback hosts)")
+
+    @field_validator("supabase_jwks_base_url", "gemini_api_key", mode="before")
+    @classmethod
+    def _empty_means_unset(cls, value: object) -> object:
+        """`NAME=` in an env file (as in .env.example) means "not set", not an empty value."""
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @model_validator(mode="after")
+    def _check_jwks_base_url(self) -> "Settings":
+        url = self.supabase_jwks_base_url
+        if url is None:
+            return self
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("supabase_jwks_base_url must be an http or https URL")
+        plain_remote = parsed.scheme == "http" and parsed.hostname not in LOOPBACK_HOSTS
+        if plain_remote and not self.supabase_jwks_allow_plain_http:
+            raise ValueError(
+                "supabase_jwks_base_url must use https (plain http to another host needs "
+                "SUPABASE_JWKS_ALLOW_PLAIN_HTTP=true, for the local stack only)"
+            )
+        return self
 
 
 @lru_cache

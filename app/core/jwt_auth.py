@@ -41,6 +41,10 @@ class JwksProvider:
     - after a failure, requests fail fast for min_refetch_seconds instead of re-trying the network
     """
 
+    @property
+    def url(self) -> str:
+        return self._url
+
     def __init__(
         self,
         url: str,
@@ -161,6 +165,14 @@ def _parse_signing_key(entry: Any) -> tuple[str, ec.EllipticCurvePublicKey] | No
 
 
 class JwtTokenVerifier:
+    @property
+    def issuer(self) -> str:
+        return self._issuer
+
+    @property
+    def jwks_url(self) -> str | None:
+        return getattr(self._keys, "url", None)
+
     def __init__(self, keys: KeyProvider, *, issuer: str, audience: str) -> None:
         self._keys = keys
         self._issuer = issuer
@@ -219,8 +231,9 @@ class JwtTokenVerifier:
 
 def build_verifier(settings: Settings) -> JwtTokenVerifier:
     issuer = f"{settings.supabase_url.rstrip('/')}/auth/v1"
+    keys_base = (settings.supabase_jwks_base_url or settings.supabase_url).rstrip("/")
     provider = JwksProvider(
-        f"{issuer}/.well-known/jwks.json",
+        f"{keys_base}/auth/v1/.well-known/jwks.json",
         timeout_seconds=settings.jwks_timeout_seconds,
         cache_seconds=settings.jwks_cache_seconds,
         min_refetch_seconds=settings.jwks_min_refetch_seconds,
