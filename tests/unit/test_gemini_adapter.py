@@ -5,6 +5,7 @@ import pytest
 from google.genai import errors, types
 from pydantic import SecretStr
 
+from app.ai.budget import BudgetedTriageModel
 from app.ai.gemini import GeminiTriageModel, build_triage_model
 from app.ai.interface import CategoryOption, DisabledTriageModel, TicketText, TriageModelError
 from app.ai.output import parse_output
@@ -116,5 +117,6 @@ def test_with_a_key_the_gemini_model_uses_the_configured_name() -> None:
 
     model = build_triage_model(settings)
 
-    assert isinstance(model, GeminiTriageModel)
+    assert isinstance(model, BudgetedTriageModel)
+    assert isinstance(model.inner, GeminiTriageModel)
     assert model.name == "gemini-other"

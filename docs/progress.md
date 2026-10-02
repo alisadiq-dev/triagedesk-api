@@ -304,3 +304,36 @@ Checks: 671 tests, coverage 96% on `app/services` and `app/ai`, ruff, mypy, pip-
 
 ### Not verified
 Concurrent load, tables larger than 10,000 rows, network and Nginx overhead (Phase 9), cold cache.
+
+## Phase 8: Hardening, OWASP API Top 10 review, rate limiting, pip-audit (done)
+
+Delivered: in-process rate limiting (per client IP on `/health`, `/ready` and everything under `/api/v1`, per user on ticket and comment
+creation, `Retry-After`, env numbers and an off switch), a global cap on model calls, request body size limit (413), security headers,
+docs and OpenAPI off by default, a recovery attempt cap, quiet HTTP loggers, `--no-server-header`. The OWASP API Top 10 (2023) review
+is in `docs/security-review-owasp-api.md`: an independent security-auditor pass found no Critical or High issues; the four Medium and
+the cheap Low findings are fixed, the rest are accepted or listed as Phase 9 notes there.
+
+Checks: 729 tests, coverage 96% on `app/services` and `app/ai`, ruff, mypy, pip-audit clean. Docker image rebuilt and smoke-tested
+(non-root uid 10001, security headers, no `Server` header).
+
+### Doubt pass (rate limiting and size limits)
+| Claim | Doubt | Result |
+|---|---|---|
+| Everything under `/api/v1` is limited before auth | Unknown paths, wrong methods and bad bodies skipped a router dependency | Found by the audit, moved to a middleware, tested for 404, 405, bad body |
+| A limiter cannot be used to exhaust memory | Many distinct keys, IPv6 /64 rotation | Table capped at 10,000 keys with O(1) eviction; IPv6 grouped by /64 |
+| A refused request costs almost nothing | Token check, DB or body parsing before the 429 | Tests: verifier never called, no database created for limited public routes |
+| The size limit cannot be bypassed | Chunked bodies, lying Content-Length, non-ASCII digits | Counted while streaming; header parsed strictly; tests for each |
+| The model bill is bounded | Per-user limits only | Global per-minute cap, then the keyword fallback (tested) |
+
+### Five-axis self-review
+| Axis | Finding | Severity | Status |
+|---|---|---|---|
+| Correctness | Fixed windows allow up to twice the limit across a window edge | Low | Accepted, documented in the limiter |
+| Correctness | A ticket refused by the model cap gets `ai_status = failed` and is never re-triaged (no re-triage by design) | Low | Accepted; the keyword priority still applies |
+| Readability | Hardening code is in two small modules (`rate_limit.py`, `hardening.py`) | Info | OK |
+| Architecture | Per-IP limits are middleware; per-user limits are route dependencies (they need the actor) | Info | As designed |
+| Security | See `docs/security-review-owasp-api.md` | - | Fixed or accepted |
+| Performance | One dict lookup per request; no I/O in the limiter | Info | Re-benchmarked after the hardening (limiter off in the benchmark, it measures the endpoint): worst p95 19.6 ms, constraint 10 still holds |
+
+### Not verified
+- Behaviour under real concurrent load, a real Nginx in front, Supabase signup settings, live Gemini behaviour with the cap, and `max_output_tokens` (not set on purpose).

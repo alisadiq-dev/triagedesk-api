@@ -129,3 +129,12 @@ These fill in endpoint 11 without adding endpoints or fields.
 - `created_after` is inclusive, `created_before` is exclusive. Both must include a timezone (naive values are 422).
 - `q` is 1 to 200 characters, matched against title and description with PostgreSQL full-text search (`plainto_tsquery`, English configuration), so operators and punctuation are plain text.
 - `sla_breached=true|false` uses the same breach rule as the `sla_breached` field. `total` always reflects all filters.
+
+## Clarifications for Phase 8 hardening (2026-10-02)
+
+No endpoint or field added. Two status codes become real:
+- **429 `rate_limited`** (reserved since Phase 3) with a `Retry-After` header in seconds. Limits are in process (per app instance, reset on restart; no Redis; run one worker). Per client IP (IPv6 clients grouped by /64): `/health` and `/ready` share one budget (default 120 per minute), and every request under `/api/v1`, including unknown paths and wrong methods, counts against another (600 per minute) in a middleware, before routing, the token check or reading any body. Per user: `POST /tickets` (10 per minute, each ticket costs a model call) and `POST /tickets/{id}/comments` (30 per minute). Requests that fail validation still count. All numbers are env settings; `RATE_LIMIT_ENABLED=false` turns them off.
+- **413 `payload_too_large`** for request bodies over `MAX_REQUEST_BODY_BYTES` (default 65,536; the largest valid ticket is about 10.3 KB), also for chunked bodies.
+- Every response carries `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` and `Referrer-Policy: no-referrer`; all except `/docs` and `/redoc` also carry `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`.
+- `/docs`, `/redoc` and `/openapi.json` follow `API_DOCS_ENABLED` (default **false**; `make run` turns it on for development).
+- Model calls have a global cap (`AI_CALLS_PER_MINUTE`, default 60). Over it, new tickets take the keyword fallback (`ai_status = failed`), exactly as if the model had failed.

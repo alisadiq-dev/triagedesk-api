@@ -138,7 +138,12 @@ async def explain(url: str) -> dict[str, str]:
         if "FROM tickets" in statement and "count(" not in statement.lower():
             captured.append((statement, tuple(parameters)))
 
-    settings = Settings(_env_file=None, database_url=SecretStr(url), ai_recovery_enabled=False)
+    settings = Settings(
+        _env_file=None,
+        database_url=SecretStr(url),
+        ai_recovery_enabled=False,
+        rate_limit_enabled=False,  # this measures the endpoint, not the limiter
+    )
     app = create_app(settings, token_verifier=BenchVerifier())
     headers = {"Authorization": "Bearer admin"}
     plans: dict[str, str] = {}
@@ -186,7 +191,12 @@ async def main(tickets: int, requests: int) -> None:
             await connection.execute(text("ANALYZE"))
         print(f"## Latency (in process, {tickets} tickets, {requests} requests per scenario)\n")
         print("| Scenario | p50 ms | p95 ms | p99 ms | max ms |\n|---|---|---|---|---|")
-        settings = Settings(_env_file=None, database_url=SecretStr(url), ai_recovery_enabled=False)
+        settings = Settings(
+            _env_file=None,
+            database_url=SecretStr(url),
+            ai_recovery_enabled=False,
+            rate_limit_enabled=False,  # this measures the endpoint, not the limiter
+        )
         app = create_app(settings, token_verifier=BenchVerifier())
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app), base_url="http://bench"

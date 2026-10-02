@@ -4,7 +4,7 @@ BIN ?= .venv/bin/
 .PHONY: run test lint migrate seed audit bench
 
 run:
-	$(BIN)uvicorn app.main:app --reload
+	API_DOCS_ENABLED=true $(BIN)uvicorn app.main:app --reload
 
 test:
 	docker compose up -d --wait test-db

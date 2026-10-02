@@ -7,9 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.gemini import build_triage_model
 from app.ai.triage import TriageRunner
-from app.core.config import get_settings
+from app.core.config import get_hardening_settings, get_settings
 from app.core.db import Database
+from app.core.errors import RateLimitedError
 from app.core.jwt_auth import build_verifier
+from app.core.rate_limit import RateLimiter, RateLimits
 from app.core.security import AuthenticatedUser, AuthenticationError, TokenVerifier
 from app.models.enums import Role
 from app.services.permissions import Actor, require_role
@@ -36,6 +38,21 @@ def ensure_triage_runner(app: FastAPI) -> TriageRunner:
         )
     runner: TriageRunner = app.state.triage_runner
     return runner
+
+
+def ensure_rate_limits(app: FastAPI) -> RateLimits:
+    """Built lazily from the settings, like the database."""
+    if app.state.rate_limits is None:
+        app.state.rate_limits = RateLimits.from_settings(
+            app.state.settings or get_hardening_settings()
+        )
+    limits: RateLimits = app.state.rate_limits
+    return limits
+
+
+def _enforce(limits: RateLimits, limiter: RateLimiter, key: str) -> None:
+    if limits.enabled and (retry_after := limiter.check(key)) is not None:
+        raise RateLimitedError(retry_after)
 
 
 async def get_database(request: Request) -> Database:
@@ -88,3 +105,17 @@ def require_roles(*roles: Role) -> Callable[[Actor], Awaitable[Actor]]:
         return actor
 
     return dependency
+
+
+async def limit_ticket_create(
+    request: Request, actor: Annotated[Actor, Depends(get_actor)]
+) -> None:
+    limits = ensure_rate_limits(request.app)
+    _enforce(limits, limits.ticket_create, str(actor.id))
+
+
+async def limit_comment_create(
+    request: Request, actor: Annotated[Actor, Depends(get_actor)]
+) -> None:
+    limits = ensure_rate_limits(request.app)
+    _enforce(limits, limits.comment_create, str(actor.id))

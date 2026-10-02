@@ -6,8 +6,9 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 
-from app.ai.triage import Outcome, TriageRunner
+from app.ai.triage import Outcome
 from app.core.db import Database
 from app.repositories.tickets import TicketRepository
 
@@ -20,24 +21,44 @@ class RecoveryResult:
     recovered: int
 
 
+class TicketTriager(Protocol):
+    async def run(self, ticket_id: uuid.UUID) -> Outcome: ...
+
+
 class TriageRecovery:
     def __init__(
-        self, database: Database, runner: TriageRunner, age_seconds: int, batch_size: int
+        self,
+        database: Database,
+        runner: TicketTriager,
+        age_seconds: int,
+        batch_size: int,
+        max_attempts: int,
     ) -> None:
         self._database = database
         self._runner = runner
         self._age = timedelta(seconds=age_seconds)
         self._batch_size = batch_size
+        self._max_attempts = max_attempts
+        # Tickets whose result could not be stored, so they would be paid for again every sweep.
+        # In memory: a restart gives them a fresh start.
+        self._failed_attempts: dict[uuid.UUID, int] = {}
 
     async def sweep(self) -> RecoveryResult:
         """One pass: triage up to a batch of old pending tickets, then log one line."""
         cutoff = datetime.now(UTC) - self._age
+        given_up = {t for t, n in self._failed_attempts.items() if n >= self._max_attempts}
         async with self._database.session() as session:
-            ticket_ids = await TicketRepository(session).stale_pending_ids(cutoff, self._batch_size)
+            ticket_ids = await TicketRepository(session).stale_pending_ids(
+                cutoff, self._batch_size, exclude=given_up
+            )
         recovered = 0
         for ticket_id in ticket_ids:
-            if await self._recover(ticket_id) in (Outcome.SUCCESS, Outcome.FALLBACK):
+            outcome = await self._recover(ticket_id)
+            if outcome in (Outcome.SUCCESS, Outcome.FALLBACK):
                 recovered += 1
+                self._failed_attempts.pop(ticket_id, None)
+            elif outcome == Outcome.FAILED:
+                self._failed_attempts[ticket_id] = self._failed_attempts.get(ticket_id, 0) + 1
         result = RecoveryResult(found=len(ticket_ids), recovered=recovered)
         logger.info("triage_recovery", extra={"found": result.found, "recovered": result.recovered})
         return result

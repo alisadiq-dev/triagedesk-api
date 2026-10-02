@@ -194,3 +194,13 @@ both must carry a timezone (422 otherwise); `q` is a full-text search over title
 - [x] P7.2 Query-count test (constraint 8): the list endpoints run the same number of queries for 1 row and for 30 rows, for every role and with filters on.
 - [x] P7.3 Benchmark script on a throwaway database with 10,000 tickets: p50/p95/p99 for the list endpoint, `EXPLAIN ANALYZE` with and without indexes, recorded in `docs/performance.md`.
 - [x] P7.4 Constraint 10 number proposed from the measurement (50 ms p95; owner confirms, CONSTRAINTS.md stays TBD until then), phase close.
+
+## Phase 8: Hardening, OWASP API Top 10 review, rate limiting, pip-audit
+
+No Redis (locked), so rate limits are in process (per app instance) and reset on restart. No new dependency.
+Rate-limit numbers are env settings with defaults (PRD: numbers are decided in this phase).
+
+- [x] P8.1 Rate limiter (fixed window, bounded memory, injectable clock): per client IP on the public routes (`/health`, `/ready`) and on all `/api/v1` requests before any token or database work; per authenticated user on ticket creation (each ticket costs a paid model call) and on comment creation. 429 in the shared error format with `Retry-After`; an env flag turns it off.
+- [x] P8.2 Request body size limit (413, also for chunked bodies), response security headers (`nosniff`, `no-store`, `frame-ancestors 'none'`; not on the interactive docs), env flag for the interactive docs and OpenAPI.
+- [x] P8.3 OWASP API Security Top 10 (2023) review: independent pass by the security-auditor persona, findings fixed or accepted, written up in `docs/security-review-owasp-api.md` with the test that backs each control.
+- [x] P8.4 `make audit` clean and CI audit step confirmed; phase close: checks, five-axis review, progress, PR, CI green, merge.

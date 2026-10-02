@@ -66,3 +66,12 @@ async def test_an_unsafe_incoming_request_id_is_replaced(bad: str) -> None:
 
     assert response.headers["x-request-id"] != bad
     assert len(response.headers["x-request-id"]) == 32
+
+
+def test_http_client_loggers_are_quiet_so_request_urls_stay_out_of_the_logs() -> None:
+    from app.core.logging import configure_logging
+
+    configure_logging()
+
+    for name in ("httpx", "httpx2", "httpcore", "google_genai"):
+        assert logging.getLogger(name).getEffectiveLevel() >= logging.WARNING

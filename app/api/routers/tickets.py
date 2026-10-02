@@ -6,7 +6,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.triage import TriageRunner
-from app.api.deps import get_actor, get_session, get_triage_runner
+from app.api.deps import (
+    get_actor,
+    get_session,
+    get_triage_runner,
+    limit_comment_create,
+    limit_ticket_create,
+)
 from app.models.enums import Role
 from app.schemas.comments import CommentCreate, CustomerComment, StaffComment
 from app.schemas.common import Page, PageParamsDep
@@ -43,7 +49,7 @@ Service = Annotated[TicketService, Depends(get_ticket_service)]
 
 # The body depends on the caller's role (customer view or staff view), so the response model is
 # not inferred from the annotation; render_ticket picks the right schema.
-@router.post("", status_code=201, response_model=None)
+@router.post("", status_code=201, response_model=None, dependencies=[Depends(limit_ticket_create)])
 async def create_ticket(
     body: TicketCreate,
     actor: ActorDep,
@@ -127,7 +133,12 @@ async def list_comments(
     )
 
 
-@router.post("/{ticket_id}/comments", status_code=201, response_model=None)
+@router.post(
+    "/{ticket_id}/comments",
+    status_code=201,
+    response_model=None,
+    dependencies=[Depends(limit_comment_create)],
+)
 async def add_comment(
     ticket_id: uuid.UUID, body: CommentCreate, actor: ActorDep, session: SessionDep
 ) -> CustomerComment | StaffComment:
