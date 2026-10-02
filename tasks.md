@@ -219,7 +219,7 @@ with the route template only; Nginx overwrites `X-Forwarded-For`, `client_max_bo
 
 ## Phase 10: Documentation and demo
 
-- [ ] P10.1 README (what it is, architecture, quick start, commands, per-instance rate limit note, known limitations including L4), `docs/architecture.md` with Mermaid diagrams (context, triage sequence, status workflow, deployment).
-- [ ] P10.2 ADRs 0007 to 0010 for the decisions of Phases 5 to 9 that have none yet.
-- [ ] P10.3 `docs/curl-collection.md` and `scripts/demo.py` (an end-to-end demo with the demo users), run against the local production stack.
-- [ ] P10.4 Phase close: checks, review, progress, PR, CI green, merge, final summary.
+- [x] P10.1 README (what it is, architecture, quick start, commands, per-instance rate limit note, known limitations including L4), `docs/architecture.md` with Mermaid diagrams (context, triage sequence, status workflow, deployment).
+- [x] P10.2 ADRs 0007 to 0010 for the decisions of Phases 5 to 9 that have none yet.
+- [x] P10.3 `docs/curl-collection.md` and `scripts/demo.py` (an end-to-end demo with the demo users), run against the local production stack.
+- [x] P10.4 Phase close: checks, review, progress, PR, CI green, merge, final summary.

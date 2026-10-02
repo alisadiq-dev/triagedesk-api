@@ -128,7 +128,12 @@ async def run_demo(
     await step("5. Agent claims the ticket and starts work")
     await s.call("agent", "POST", f"{path}/claim", 200, "claim")
     mine = await s.call("agent", "GET", path, 200, "assignee reads the ticket")
-    say(f"    draft visible to the assignee: {mine.get('ai_suggested_reply') is not None}")
+    draft = (
+        "yes"
+        if mine.get("ai_suggested_reply")
+        else "none (no model key: the fallback writes no draft)"
+    )
+    say(f"    the assignee sees the AI draft: {draft}")
     status = f"{path}/status"
     await s.call("agent", "POST", status, 200, "start work", json={"status": "in_progress"})
 

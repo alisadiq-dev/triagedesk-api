@@ -136,7 +136,7 @@ curl -s -A "$UA" -X POST -H "Authorization: Bearer $CUSTOMER_TOKEN" -H "Content-
 
 ```bash
 # no token: 401, the same body for every kind of bad token
-curl -s -A "$UA" "$API/api/v1/me" -i | head -n 12
+curl -s -A "$UA" "$API/api/v1/me" -i | head -n 14
 # another user's ticket looks like it does not exist (404), not "forbidden"
 curl -s -A "$UA" -H "Authorization: Bearer $CUSTOMER_TOKEN" "$API/api/v1/tickets/00000000-0000-0000-0000-000000000000" | pretty
 # a customer on an admin route: 403
@@ -150,3 +150,8 @@ head -c 70000 /dev/zero | tr '\0' x | curl -s -A "$UA" -X POST -H "Authorization
 
 Rate limits answer `429` with a `Retry-After` header (per user: 10 tickets and 30 comments a minute; per client address: 120 a minute on
 `/health` and `/ready`, 600 on `/api/v1`). They are per app instance: see the README.
+
+Verified on 2026-10-02: the blocks above (all but Setup) were extracted and run in order against the local production stack through Nginx
+with the demo users. Every call answered as described; the only error bodies were the intended ones (`forbidden` for the staff-only filter,
+`invalid_transition`, `ticket_closed`, `not_found`, `forbidden`, `bad_request`, `validation_error`, `payload_too_large`, and the 401).
+Without a Gemini key the AI fields show the keyword fallback (`ai_status` is `failed`, the draft is empty).
