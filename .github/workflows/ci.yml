@@ -1,0 +1,27 @@
+name: CI
+
+on: push
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Constraints (no suppressions, no .env files)
+        run: python scripts/check_suppressions.py $(git ls-files)
+      - name: Lint (ruff + mypy)
+        run: make lint BIN=
+      - name: Tests with coverage (real Postgres 17 in Docker)
+        run: make test BIN=
+      - name: Dependency audit
+        run: make audit BIN=
