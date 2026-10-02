@@ -15,6 +15,7 @@ from app.schemas.tickets import (
     TicketCreate,
     TicketOverrides,
     TicketSort,
+    render_staff_ticket,
     render_ticket,
 )
 from app.services.comments import CommentService
@@ -39,7 +40,7 @@ Service = Annotated[TicketService, Depends(get_ticket_service)]
 @router.post("", status_code=201, response_model=None)
 async def create_ticket(body: TicketCreate, actor: ActorDep, service: Service) -> CustomerTicket:
     ticket = await service.create(body)
-    return render_ticket(actor.role, ticket, actor.email)
+    return render_ticket(actor, ticket, actor.email)
 
 
 @router.get("", response_model=None)
@@ -56,7 +57,7 @@ async def list_tickets(
         return Page[CustomerTicket](
             items=customer_items, page=page.page, page_size=page.page_size, total=total
         )
-    staff_items = [StaffTicket.from_ticket(ticket, email) for ticket, email in rows]
+    staff_items = [render_staff_ticket(actor, ticket, email) for ticket, email in rows]
     return Page[StaffTicket](
         items=staff_items, page=page.page, page_size=page.page_size, total=total
     )
@@ -65,7 +66,7 @@ async def list_tickets(
 @router.get("/{ticket_id}", response_model=None)
 async def get_ticket(ticket_id: uuid.UUID, actor: ActorDep, service: Service) -> CustomerTicket:
     ticket, email = await service.get(ticket_id)
-    return render_ticket(actor.role, ticket, email)
+    return render_ticket(actor, ticket, email)
 
 
 @router.patch("/{ticket_id}", response_model=None)
@@ -73,19 +74,19 @@ async def update_ticket(
     ticket_id: uuid.UUID, body: TicketOverrides, actor: ActorDep, service: Service
 ) -> CustomerTicket:
     ticket, email = await service.update_overrides(ticket_id, body)
-    return render_ticket(actor.role, ticket, email)
+    return render_ticket(actor, ticket, email)
 
 
 @router.post("/{ticket_id}/claim", response_model=None)
 async def claim_ticket(ticket_id: uuid.UUID, actor: ActorDep, service: Service) -> CustomerTicket:
     ticket, email = await service.claim(ticket_id)
-    return render_ticket(actor.role, ticket, email)
+    return render_ticket(actor, ticket, email)
 
 
 @router.post("/{ticket_id}/release", response_model=None)
 async def release_ticket(ticket_id: uuid.UUID, actor: ActorDep, service: Service) -> CustomerTicket:
     ticket, email = await service.release(ticket_id)
-    return render_ticket(actor.role, ticket, email)
+    return render_ticket(actor, ticket, email)
 
 
 @router.put("/{ticket_id}/assignee", response_model=None)
@@ -93,7 +94,7 @@ async def assign_ticket(
     ticket_id: uuid.UUID, body: AssigneeUpdate, actor: ActorDep, service: Service
 ) -> CustomerTicket:
     ticket, email = await service.assign(ticket_id, body.assignee_id)
-    return render_ticket(actor.role, ticket, email)
+    return render_ticket(actor, ticket, email)
 
 
 @router.get("/{ticket_id}/comments", response_model=None)

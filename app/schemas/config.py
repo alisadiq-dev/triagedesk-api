@@ -38,6 +38,9 @@ class CategoryUpdate(BaseModel):
     def at_least_one_field(self) -> Self:
         if not self.model_fields_set:
             raise ValueError("provide at least one field to change")
+        for required in ("name", "is_active"):
+            if required in self.model_fields_set and getattr(self, required) is None:
+                raise ValueError(f"{required} cannot be null")
         return self
 
 

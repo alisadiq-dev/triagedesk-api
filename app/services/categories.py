@@ -42,4 +42,6 @@ class CategoryService:
             await self._session.commit()
         except IntegrityError as exc:
             await self._session.rollback()
+            if "uq_categories_name_lower" not in str(exc.orig):
+                raise
             raise NameTakenError from exc

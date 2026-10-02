@@ -107,7 +107,11 @@ class TicketService:
 
     async def claim(self, ticket_id: uuid.UUID) -> TicketRow:
         ticket, _ = await self.get(ticket_id)
-        if self._actor.role == Role.CUSTOMER:
+        if self._actor.role == Role.CUSTOMER or ticket.customer_id == self._actor.id:
+            raise ForbiddenError("You do not have permission to do this")
+        # Re-read our own role under a share lock: a concurrent role change must wait for us.
+        me = await self._profiles.get_locked(self._actor.id, exclusive=False)
+        if me is None or me.role not in (Role.AGENT, Role.ADMIN):
             raise ForbiddenError("You do not have permission to do this")
         if ticket.status == TicketStatus.CLOSED:
             raise TicketClosedError
@@ -138,21 +142,35 @@ class TicketService:
         require_role(self._actor, Role.ADMIN)
         if ticket.status == TicketStatus.CLOSED:
             raise TicketClosedError
-        assignee = await self._profiles.get(assignee_id)
+        # Share lock: the assignee cannot be demoted between this check and our commit.
+        assignee = await self._profiles.get_locked(assignee_id, exclusive=False)
         if assignee is None or assignee.role not in (Role.AGENT, Role.ADMIN):
             raise InputError("assignee_id must be an agent or an admin")
-        if ticket.assignee_id != assignee.id:
+        if assignee.id == ticket.customer_id:
+            raise InputError("A ticket cannot be assigned to its own customer")
+        observed = ticket.assignee_id
+        if observed != assignee.id:
+            if not await self._tickets.reassign(ticket_id, observed, assignee.id):
+                current = await self._tickets.get_plain(ticket_id)
+                if current is not None and current.status == TicketStatus.CLOSED:
+                    raise TicketClosedError
+                raise ConflictError("The ticket assignment changed; try again")
             self._events.add(
-                ticket_id, self._actor.id, EventType.ASSIGNED,
-                _text(ticket.assignee_id), str(assignee.id),
-            )  # fmt: skip
-            ticket.assignee_id = assignee.id
+                ticket_id, self._actor.id, EventType.ASSIGNED, _text(observed), str(assignee.id)
+            )
             await self._session.commit()
         return await self.get(ticket_id)
 
     async def _ticket_for_staff_change(self, ticket_id: uuid.UUID) -> Ticket:
-        """404 if invisible, 403 if not allowed to change it, 409 if closed (in that order)."""
-        ticket, _ = await self.get(ticket_id)
+        """404 if invisible, 403 if not allowed to change it, 409 if closed (in that order).
+
+        The checks run on a locked, freshly read copy, so a concurrent reassignment or status
+        change cannot invalidate them before this transaction commits.
+        """
+        await self.get(ticket_id)
+        ticket = await self._tickets.get_locked(ticket_id)
+        if ticket is None:
+            raise NotFoundError("Ticket not found")
         if self._actor.role == Role.CUSTOMER:
             raise ForbiddenError("You do not have permission to do this")
         if self._actor.role == Role.AGENT and ticket.assignee_id != self._actor.id:

@@ -31,12 +31,19 @@ class UserService:
 
     async def change_role(self, user_id: uuid.UUID, new_role: Role) -> Profile:
         require_role(self._actor, Role.ADMIN)
-        target = await self._get(user_id)
+        # Lock all admins first (fixed order), then the target, so concurrent role changes, claims
+        # and assignments cannot slip past the checks below.
+        admin_ids = await self._profiles.lock_admins()
+        target = await self._profiles.get_locked(user_id, exclusive=True)
+        if target is None:
+            raise NotFoundError("User not found")
         if target.id == self._actor.id:
             raise CannotChangeOwnRoleError
         old_role = target.role
         if old_role == new_role:
             return target
+        if old_role == Role.ADMIN and not any(admin != target.id for admin in admin_ids):
+            raise RoleChangeBlockedError("At least one admin must remain")
         if new_role == Role.CUSTOMER and await self._tickets.has_open_assigned_tickets(target.id):
             raise RoleChangeBlockedError
         target.role = new_role

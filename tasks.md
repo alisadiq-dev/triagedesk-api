@@ -146,14 +146,14 @@ New dependency approved by the owner: `PyJWT[crypto]==2.15.1` (httpx2 moves to r
 
 Builds endpoints 1 to 13, 15 to 17, 20 and 21. TDD per slice; permissions in the service layer; routers stay thin.
 
-- [ ] P3.1 Request id middleware, JSON log formatter, 400 for malformed JSON, `Page[T]` and page params, `/api/v1` router, `GET /me`.
-- [ ] P3.2 Users: list, get, change role (own-role and open-assigned-tickets guards, one structured log line with actor, target, old and new role, request id).
-- [ ] P3.3 Categories (list, create, patch, soft-deactivate) and SLA policies (list, patch with merge validation).
-- [ ] P3.4 Tickets: create (SLA deadlines from the medium policy, `ticket_created` event), get, list (page, sort, status), CustomerTicket allowlist test.
-- [ ] P3.5 Ticket overrides (category, priority with SLA recalculation from `created_at`), claim (atomic), release, admin assign; events written.
-- [ ] P3.6 Comments: list and create with role-specific views, internal notes, first-response timestamp, closed-ticket guard.
-- [ ] P3.7 Permission matrix: every role on every route, plus a meta-test that fails if a route is missing from the matrix.
-- [ ] P3.8 Phase close: checks, security review of RBAC (doubt pass), five-axis review, progress, PR, CI green, merge.
+- [x] P3.1 Request id middleware, JSON log formatter, 400 for malformed JSON, `Page[T]` and page params, `/api/v1` router, `GET /me`.
+- [x] P3.2 Users: list, get, change role (own-role and open-assigned-tickets guards, one structured log line with actor, target, old and new role, request id).
+- [x] P3.3 Categories (list, create, patch, soft-deactivate) and SLA policies (list, patch with merge validation).
+- [x] P3.4 Tickets: create (SLA deadlines from the medium policy, `ticket_created` event), get, list (page, sort, status), CustomerTicket allowlist test.
+- [x] P3.5 Ticket overrides (category, priority with SLA recalculation from `created_at`), claim (atomic), release, admin assign; events written.
+- [x] P3.6 Comments: list and create with role-specific views, internal notes, first-response timestamp, closed-ticket guard.
+- [x] P3.7 Permission matrix: every role on every route, plus a meta-test that fails if a route is missing from the matrix.
+- [x] P3.8 Security review (security-auditor persona), fixes, phase close: checks, security review of RBAC (doubt pass), five-axis review, progress, PR, CI green, merge.
 
 ## Phase 4: Status workflow and audit log (endpoints 14 and 18)
 

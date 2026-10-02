@@ -96,3 +96,45 @@ a slow-drip JWKS response could hold the fetch lock beyond the per-phase timeout
 ### Not verified live
 Expired, wrong-audience, wrong-issuer, tampered and anonymous tokens and key rotation against the real stack
 (anonymous sign-ins are disabled in the local config). They are covered by unit and HTTP tests with a local test key.
+
+## Phase 3: Tickets, comments, users, categories, SLA policies (done)
+
+Delivered (contract: `docs/api-contract.md`, approved with all 11 decisions): request id middleware and JSON logging, 400 for
+malformed JSON, the shared `Page` shape, `GET /me`, admin user endpoints with a guarded and logged role change, categories and
+SLA policies, tickets (create, get, list with page/sort/status), overrides, claim, release, admin assignment, and comments with
+role-specific views. Endpoints 14 (status), 18 (events) are Phase 4; 19 (SLA status) is Phase 6; list filters beyond `status` are Phase 7.
+
+Checks: 430 tests including the permission matrix (every role on every route: 90 cases plus 18 unauthenticated plus a
+route-coverage meta-test), ruff and mypy clean, pip-audit clean, CI green on GitHub.
+
+### Doubt pass (RBAC)
+| Claim | Doubt | Result |
+|---|---|---|
+| A ticket you may not see looks nonexistent | Existence leaks through status, body or validation order | Identical 404 body tested; order is 404, 403, 409 |
+| Customers only get allowlisted fields | New model fields leaking into responses | Separate schemas, exact-field tests on ticket and comment, create, get, list |
+| Role comes only from the database | Stale or forged role in a token | Tested end to end (Phase 2); service re-reads roles under locks for claim and assign |
+| Claim has exactly one winner | Two agents racing | Atomic conditional UPDATE; concurrent test: one 200, one 409 |
+| Role rules cannot be bypassed by timing | Role change racing a claim or assignment | Row locks (share vs exclusive); two deterministic lock-ordering tests |
+
+### Security review (security-auditor persona)
+No Critical or High. Fixed: AI draft visible only to the assignee and admins (M1; PRD stricter than the contract, PRD followed),
+role-change versus claim and assign races (M2), assign as a conditional update (L1), comment checks on a locked fresh copy (L2),
+page upper bound (L3), category null handling and the `name_taken` code only for the real unique violation (L4),
+staff cannot work on or count a first response for their own ticket (L5), and the last admin cannot be demoted.
+Accepted: `customer_email` comes from the token's email claim and is display data only (the local Supabase stack does not enforce
+email confirmation); internal notes stay readable by any agent who can see the ticket (contract says so).
+Test gaps closed: real role-change in the matrix, race tests for claim, role change, comment and last-admin.
+
+### Five-axis self-review
+| Axis | Finding | Severity | Status |
+|---|---|---|---|
+| Correctness | Release event recorded `None` as previous assignee (ORM-synchronised UPDATE) | Medium | Found by a test, fixed |
+| Correctness | FastAPI no longer flattens included routers, so the matrix meta-test reads OpenAPI | Low | Fixed |
+| Readability | Services are long (tickets.py) but each method is one use case with the 404, 403, 409 order stated | Low | Accepted; split if Phase 4 grows it |
+| Architecture | Services take `(session, actor)`; repositories hold all SQL; routers only map schemas | Info | As designed |
+| Security | See review above | - | Fixed or accepted |
+| Performance | List and get use one joined query (no N+1 for the customer email); formal query-count test and EXPLAIN come in Phase 7 | Info | Deferred |
+
+### Not verified
+Concurrency behaviour is tested on one Postgres 17 instance with two connections; deadlock freedom relies on the fixed lock order
+(admins by id, then target) and was not stress-tested.

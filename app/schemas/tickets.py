@@ -15,6 +15,7 @@ from app.models.enums import (
     Sentiment,
     TicketStatus,
 )
+from app.services.permissions import Actor
 
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 Description = Annotated[
@@ -95,7 +96,9 @@ class StaffTicket(CustomerTicket):
     sla_breached: bool
 
     @classmethod
-    def from_ticket(cls, ticket: Ticket, customer_email: str | None) -> "StaffTicket":
+    def from_ticket(
+        cls, ticket: Ticket, customer_email: str | None, *, show_draft: bool = True
+    ) -> "StaffTicket":
         base = CustomerTicket.model_validate(ticket).model_dump()
         return cls(
             **base,
@@ -108,7 +111,7 @@ class StaffTicket(CustomerTicket):
             priority_source=ticket.priority_source,
             sentiment=ticket.sentiment,
             ai_status=ticket.ai_status,
-            ai_suggested_reply=ticket.ai_suggested_reply,
+            ai_suggested_reply=ticket.ai_suggested_reply if show_draft else None,
             ai_model=ticket.ai_model,
             ai_prompt_version=ticket.ai_prompt_version,
             first_response_due_at=ticket.first_response_due_at,
@@ -119,8 +122,14 @@ class StaffTicket(CustomerTicket):
         )
 
 
-def render_ticket(role: Role, ticket: Ticket, customer_email: str | None) -> CustomerTicket:
+def render_staff_ticket(actor: Actor, ticket: Ticket, customer_email: str | None) -> StaffTicket:
+    """The staff view. The AI draft is only for the assignee and admins (PRD section 4)."""
+    show_draft = actor.role == Role.ADMIN or ticket.assignee_id == actor.id
+    return StaffTicket.from_ticket(ticket, customer_email, show_draft=show_draft)
+
+
+def render_ticket(actor: Actor, ticket: Ticket, customer_email: str | None) -> CustomerTicket:
     """The customer view for customers, the staff view (a CustomerTicket subclass) for staff."""
-    if role == Role.CUSTOMER:
+    if actor.role == Role.CUSTOMER:
         return CustomerTicket.model_validate(ticket)
-    return StaffTicket.from_ticket(ticket, customer_email)
+    return render_staff_ticket(actor, ticket, customer_email)

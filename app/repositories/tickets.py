@@ -97,3 +97,36 @@ class TicketRepository:
             .returning(Ticket.id)
         )
         return result.scalar_one_or_none() is not None
+
+    async def get_locked(self, ticket_id: uuid.UUID) -> Ticket | None:
+        """Re-read the ticket and hold a lock (FOR NO KEY UPDATE) until the transaction ends.
+
+        Checks made on this copy cannot be invalidated by a concurrent claim, release, assignment
+        or status change before the caller commits.
+        """
+        query = (
+            select(Ticket)
+            .where(Ticket.id == ticket_id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+        return (await self._session.scalars(query)).one_or_none()
+
+    async def reassign(
+        self,
+        ticket_id: uuid.UUID,
+        observed_assignee_id: uuid.UUID | None,
+        new_assignee_id: uuid.UUID,
+    ) -> bool:
+        """Atomic: only succeeds if the assignee is still the one the caller saw and not closed."""
+        result = await self._session.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.assignee_id.is_not_distinct_from(observed_assignee_id),
+                Ticket.status != TicketStatus.CLOSED,
+            )
+            .values(assignee_id=new_assignee_id)
+            .returning(Ticket.id)
+        )
+        return result.scalar_one_or_none() is not None

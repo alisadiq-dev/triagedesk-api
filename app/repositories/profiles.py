@@ -31,3 +31,27 @@ class ProfileRepository:
             base.order_by(Profile.created_at, Profile.id).offset(offset).limit(limit)
         )
         return list(rows), total or 0
+
+    async def get_locked(self, profile_id: uuid.UUID, *, exclusive: bool) -> Profile | None:
+        """Read the profile and hold a row lock until the transaction ends.
+
+        FOR SHARE (exclusive=False) lets claim and assign rely on the role they just read;
+        FOR UPDATE (exclusive=True) lets a role change wait for them to finish.
+        """
+        query = (
+            select(Profile)
+            .where(Profile.id == profile_id)
+            .with_for_update(read=not exclusive)
+            .execution_options(populate_existing=True)
+        )
+        return (await self._session.scalars(query)).one_or_none()
+
+    async def lock_admins(self) -> list[uuid.UUID]:
+        """Lock every admin row in a fixed order (no deadlocks) and return their ids."""
+        rows = await self._session.scalars(
+            select(Profile.id)
+            .where(Profile.role == Role.ADMIN)
+            .order_by(Profile.id)
+            .with_for_update()
+        )
+        return list(rows)

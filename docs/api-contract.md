@@ -109,3 +109,13 @@ No ticket deletion, no editing title or description, no customer status changes,
 9. Malformed JSON is 400; schema validation failures are 422.
 10. Categories list is staff-only (customers never see categories).
 11. Ticket and comment creation are documented as unsafe to retry (no idempotency key).
+
+## Clarifications after the Phase 3 security review (2026-10-02)
+
+These tighten the approved contract; no endpoint, schema field or status code was added or removed.
+- `ai_suggested_reply` is `null` for agents who are not the ticket's assignee (PRD section 4: the draft is for the assignee). Admins and the assignee see it. The PRD wording was stricter than the contract table, so the PRD won.
+- `page` is capped at 1,000,000 (larger values are 422), so an absurd offset can never reach the database.
+- A user cannot claim, be assigned, or have their public comment counted as a first response on a ticket where they are the customer.
+- Demoting an admin is blocked (409 `role_change_blocked`) if it would leave no admin. Role changes, claims and assignments lock the affected profile rows, so they cannot slip past each other.
+- A category PATCH rejects `null` for `name` and `is_active` (422). `description: null` clears the description.
+- Internal notes remain readable by any agent who can see the ticket, including after a release (the contract says "A (visible)").

@@ -51,8 +51,8 @@ class InvalidTransitionError(ConflictError):
 class RoleChangeBlockedError(ConflictError):
     code = "role_change_blocked"
 
-    def __init__(self) -> None:
-        super().__init__("Reassign or close this user's open tickets first")
+    def __init__(self, message: str = "Reassign or close this user's open tickets first") -> None:
+        super().__init__(message)
 
 
 class CannotChangeOwnRoleError(ConflictError):
