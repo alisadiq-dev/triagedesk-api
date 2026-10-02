@@ -1,12 +1,15 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.ai.interface import TriageModel
+from app.ai.recovery import TriageRecovery, run_periodically
+from app.api.deps import ensure_database, ensure_triage_runner
 from app.api.routers import health
 from app.api.v1 import api_v1
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.core.db import Database
 from app.core.errors import register_error_handlers
 from app.core.jwt_auth import JwtTokenVerifier
@@ -14,9 +17,29 @@ from app.core.logging import RequestIdMiddleware, configure_logging
 from app.core.security import TokenVerifier
 
 
+def start_recovery(app: FastAPI, settings: Settings) -> asyncio.Task[None] | None:
+    """Start the stuck-pending sweeper (ADR 0006) unless it is switched off."""
+    if not settings.ai_recovery_enabled:
+        return None
+    recovery = TriageRecovery(
+        ensure_database(app),
+        ensure_triage_runner(app),
+        settings.ai_recovery_age_seconds,
+        settings.ai_recovery_batch_size,
+    )
+    return asyncio.create_task(
+        run_periodically(recovery.sweep, settings.ai_recovery_interval_seconds)
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    app.state.recovery_task = start_recovery(app, app.state.settings or get_settings())
     yield
+    task: asyncio.Task[None] | None = app.state.recovery_task
+    if task is not None:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
     database: Database | None = app.state.database
     if database is not None:
         await database.dispose()
@@ -36,6 +59,7 @@ def create_app(
     app.state.token_verifier = token_verifier
     app.state.triage_model = triage_model
     app.state.triage_runner = None
+    app.state.recovery_task = None
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
     app.include_router(health.router)
