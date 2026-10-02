@@ -20,6 +20,7 @@ Backend only: AI-assisted support ticket API. Read `docs/PRD.md` first, then `CO
 - Errors use `{"error": {"code", "message"}}`. Customer responses use an allowlist schema.
 
 ## Secrets and environment
+- Local Supabase bootstrap (signing key, start, live check): `docs/local-supabase.md`. `supabase/signing_keys.json` is private and git-ignored.
 - Secrets live in `~/.secrets/triagedesk-api.env`. Source it only inside the command that needs it. Never print values; check by length.
 - Supabase: local stack (`supabase start`) is only the token issuer, ES256 JWKS (not HS256). No hosted project. App DB is local Docker Postgres 17.
 - Scripts calling the running API (local or via Nginx) send a normal User-Agent.

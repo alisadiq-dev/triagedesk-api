@@ -129,3 +129,15 @@ Data model approved 2026-10-02 (see `docs/data-model.md`). Carried to Phase 3: t
 
 ### Phase 1 close (done)
 All checks, five-axis review, simplification pass, update `docs/progress.md`, open PR, wait for CI green, merge, sync main.
+
+## Phase 2: Auth and RBAC
+
+New dependency approved by the owner: `PyJWT[crypto]==2.15.1` (httpx2 moves to runtime for the JWKS client).
+
+- [x] P2.1 Profile creation on first valid request (idempotent, concurrent-safe), role read from the database only.
+- [x] P2.2 `Actor`, `require_role`, 401/403 error types, `get_actor` and `require_roles` dependencies; tests for customer, agent and admin.
+- [x] P2.3 `JwksProvider` (timeout, cache, rate-limited refetch, failure backoff, only public ES256 keys) with tests.
+- [x] P2.4 `JwtTokenVerifier` (ES256 pinned, required claims, aud and iss from settings, is_anonymous rejected, identical 401 body, 503 fail-closed with a log line) with tests for expired, missing, wrong-audience, wrong-issuer, wrong-algorithm, tampered and unsigned tokens.
+- [x] P2.5 Missing token gets 401 before any JWKS or database work (tested).
+- [x] P2.6 Local Supabase stack: git-ignored `supabase/signing_keys.json` with an ES256 key, `docs/local-supabase.md`, live check script confirming `aud`, `iss`, ES256 and verification of a real token.
+- [ ] P2.7 Phase close: checks, security review of auth, five-axis review, progress, PR, CI green, merge.
