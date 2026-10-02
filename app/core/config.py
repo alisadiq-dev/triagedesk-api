@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     jwks_cache_seconds: int = Field(default=300, gt=0)
     jwks_min_refetch_seconds: int = Field(default=30, gt=0)
     ai_timeout_seconds: float = Field(default=15.0, gt=0)
+    # Gemini adapter: without a key, triage always takes the keyword fallback.
+    gemini_api_key: SecretStr | None = None
+    gemini_model: str = "gemini-3.5-flash-lite"
+    # Recovery sweeper for tickets stuck in ai_status = pending (docs/adr/0006).
+    ai_recovery_enabled: bool = True
+    ai_recovery_interval_seconds: int = Field(default=60, gt=0)
+    ai_recovery_age_seconds: int = Field(default=120, gt=0)
+    ai_recovery_batch_size: int = Field(default=10, gt=0)
 
     @field_validator("supabase_url")
     @classmethod

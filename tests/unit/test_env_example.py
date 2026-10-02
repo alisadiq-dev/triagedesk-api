@@ -22,3 +22,7 @@ def test_env_example_lists_every_setting_the_app_reads() -> None:
 
 def test_env_example_holds_no_secret_values() -> None:
     assert read_example()["DATABASE_URL"] == ""
+
+
+def test_env_example_holds_no_gemini_key() -> None:
+    assert read_example()["GEMINI_API_KEY"] == ""
