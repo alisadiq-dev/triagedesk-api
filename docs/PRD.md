@@ -9,23 +9,24 @@ Customers create tickets. AI classifies each ticket (category, priority, sentime
 Support agents work tickets through a status workflow. Admins manage users, categories and SLA policies.
 
 Success means: every role is permission-tested on every endpoint, AI failure never blocks ticket creation,
-CI is green, and the app is deployed over HTTPS with a rollback path.
+CI is green, and the app runs locally in a production-style Docker Compose setup (Nginx, non-root containers)
+with documented start, stop, backup and restore. Cloud deployment is deferred (ADR 0005).
 
 Out of scope: frontend, email ingestion, file attachments, live chat, business-hours SLA, auto-assignment,
-re-triage endpoint, automatic status transitions, a separate SLA-policy audit trail, ticket deletion,
+re-triage endpoint, cloud deployment (ADR 0005), automatic status transitions, a separate SLA-policy audit trail, ticket deletion,
 editing a ticket's title or description.
 
 ## 2. Tech stack (fixed)
 
-Python 3.12, FastAPI, Pydantic v2, PostgreSQL (Supabase hosted), SQLAlchemy 2.0 async, Alembic,
-Supabase Auth (JWT, ES256 via JWKS), Gemini API, Pytest, Ruff, mypy, pip-audit, Docker, Docker Compose,
+Python 3.12, FastAPI, Pydantic v2, PostgreSQL 17 (local Docker), SQLAlchemy 2.0 async, Alembic,
+Supabase Auth (local stack via `supabase start` as token issuer; JWT ES256 via JWKS), Gemini API, Pytest, Ruff, mypy, pip-audit, Docker, Docker Compose,
 GitHub Actions, Nginx. Exact versions are pinned in Phase 0 after checking official docs.
 Any dependency beyond this list needs approval first.
 
 ## 3. Locked decisions
 
 - No Redis, no Celery, no microservices. AI triage runs in FastAPI BackgroundTasks after ticket creation.
-- Schema changes only through Alembic migrations, each with a working downgrade. After the first deploy: expand, migrate, contract.
+- Schema changes only through Alembic migrations, each with a working downgrade. After the first release (Phase 9 local production setup): expand, migrate, contract.
 - Repository pattern over SQLAlchemy. No ORM calls in routers.
 - Permissions enforced in the service layer. No reliance on Supabase RLS.
 
@@ -163,21 +164,22 @@ customer schema allowlist, role-change protection, prompt-injection cases.
 ## 18. Working rules
 
 Always: failing test first, full suite before each commit, main stays green, config from env vars, update `docs/progress.md` each phase.
-Ask first: new dependencies, schema changes after Phase 1, changing a locked decision, any destructive command, anything touching the production server.
+Ask first: new dependencies, schema changes after Phase 1, changing a locked decision, any destructive command, anything touching secrets or the local production data (volumes, backups).
 Never: commit secrets or `.env`, log tokens or secrets, delete or weaken a test, add suppressions without approval, lower thresholds in CONSTRAINTS.md,
 let the LLM change roles, permissions or ticket ownership.
 
 Process rules from earlier projects:
 - Secrets live in `~/.secrets/triagedesk-api.env` (chmod 600). Source it only inside the command that needs it. Never print or echo values; check by length only. Never ask for secrets in chat.
-- Supabase project: Data API off, "automatically expose new tables" off, ES256 JWT signing keys (JWKS), connection through the session pooler (IPv4), not the direct host.
+- Supabase: local stack (`supabase start`) is only the token issuer; ES256 JWT signing keys (JWKS), not the legacy HS256 secret.
+  No hosted Supabase project. The app database is the local Docker Postgres 17, not Supabase's Postgres.
 - Where third-party behaviour matters, run a live check against the real service and state exactly what is unverified. Do not stop on a guess.
 - A task is done only when CI is green on GitHub, not just locally.
 - When a PR is opened, stop and say so. The owner merges after that.
-- Scripts that call the deployed API send a normal User-Agent.
+- Scripts that call the running API (local or through Nginx) send a normal User-Agent.
 
 ## 19. Open items (not decided yet)
 
-- Deployment target: DigitalOcean droplet or Azure for Students Ubuntu VM. Ask before Phase 9; do not assume.
+- Deployment: no cloud deployment for now (ADR 0005). Phase 9 is a local production setup (docker-compose.prod.yml with app, Nginx and Postgres; runbook for start, stop, backup, restore).
 - Pagination shape and endpoint list: in the API contract (Phase 3).
 - Data model and first migration: proposed in Phase 1.
 - Rate limit numbers: Phase 8. List endpoint p95 latency target: Phase 7, after first measurement.

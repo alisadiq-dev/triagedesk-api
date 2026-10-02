@@ -29,7 +29,7 @@ A task is done only when CI is green on GitHub (from T0.9 on; before that, local
 - Do: `app/core/db.py` async engine and session with an explicit pool config (size, overflow, timeout, pre-ping, recycle), configurable by env. `GET /ready` runs `SELECT 1`; returns 200, or 503 in the error format when the DB is unreachable.
 - Acceptance: integration test against real PostgreSQL in Docker: 200 when up; 503 when the DB URL is wrong; pool settings are applied (asserted on the engine).
 - Source check: SQLAlchemy async and asyncpg docs read first; doc URL in the commit body.
-- Live check (later, in a separate approved step): behaviour through the Supabase session pooler. Not verified in Phase 0 unless you provide a Supabase project; I will state exactly what is unverified.
+- Plan change (2026-10-02): the database is the local Docker Postgres 17, so no Supabase pooler check is needed.
 - Depends on: T0.3, T0.6 (test Postgres)
 - Verify: `docker compose up -d test-db && pytest tests/integration/test_ready.py`
 
@@ -66,6 +66,11 @@ A task is done only when CI is green on GitHub (from T0.9 on; before that, local
 
 ### Phase 0 close
 Full tests and checks, five-axis self-review with severity labels, one simplification pass, update `docs/progress.md`, short summary and file list, then STOP for your review.
+
+## Plan change (2026-10-02): local only
+- No cloud deployment and no hosted Supabase project (ADR 0005). Auth tokens come from the local Supabase stack (`supabase start`, ES256 signing keys); tests use a local test key and a faked JWKS.
+- The app database is the local Docker Postgres 17 for development, tests and the local production setup.
+- Phase 9 becomes "local production setup": `docker-compose.prod.yml` (app, Nginx reverse proxy, Postgres), non-root containers, `/ready` and a smoke test against the Nginx URL, `docs/runbook.md` for start, stop, backup and restore. No SSH deploy job, no server hardening, no Let's Encrypt.
 
 ## Answers recorded (2026-10-02)
 
@@ -124,3 +129,15 @@ Data model approved 2026-10-02 (see `docs/data-model.md`). Carried to Phase 3: t
 
 ### Phase 1 close (done)
 All checks, five-axis review, simplification pass, update `docs/progress.md`, open PR, wait for CI green, merge, sync main.
+
+## Phase 2: Auth and RBAC
+
+New dependency approved by the owner: `PyJWT[crypto]==2.15.1` (httpx2 moves to runtime for the JWKS client).
+
+- [x] P2.1 Profile creation on first valid request (idempotent, concurrent-safe), role read from the database only.
+- [x] P2.2 `Actor`, `require_role`, 401/403 error types, `get_actor` and `require_roles` dependencies; tests for customer, agent and admin.
+- [x] P2.3 `JwksProvider` (timeout, cache, rate-limited refetch, failure backoff, only public ES256 keys) with tests.
+- [x] P2.4 `JwtTokenVerifier` (ES256 pinned, required claims, aud and iss from settings, is_anonymous rejected, identical 401 body, 503 fail-closed with a log line) with tests for expired, missing, wrong-audience, wrong-issuer, wrong-algorithm, tampered and unsigned tokens.
+- [x] P2.5 Missing token gets 401 before any JWKS or database work (tested).
+- [x] P2.6 Local Supabase stack: git-ignored `supabase/signing_keys.json` with an ES256 key, `docs/local-supabase.md`, live check script confirming `aud`, `iss`, ES256 and verification of a real token.
+- [x] P2.7 Security audit (security-auditor persona) and fixes, then phase close: checks, five-axis review, progress, PR, CI green, merge.

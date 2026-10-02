@@ -21,3 +21,8 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# local Supabase stack: private signing key and CLI state (never commit)
+supabase/signing_keys.json
+supabase/.temp/
+supabase/.branches/

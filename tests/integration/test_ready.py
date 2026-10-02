@@ -41,3 +41,11 @@ def test_engine_applies_the_configured_pool_settings(settings: Settings) -> None
     assert pool.size() == 3
     assert pool.timeout() == 7
     assert pool._max_overflow == 2
+
+
+def test_engine_hides_statement_parameters_so_errors_do_not_leak_personal_data(
+    settings: Settings,
+) -> None:
+    engine = build_engine(settings)
+
+    assert engine.sync_engine.hide_parameters is True
