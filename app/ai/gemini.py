@@ -40,12 +40,28 @@ class _AsyncModels(Protocol):
 
 class GeminiTriageModel:
     def __init__(
-        self, models: _AsyncModels, model: str, timeout_seconds: float, max_output_tokens: int
+        self,
+        models: _AsyncModels,
+        model: str,
+        timeout_seconds: float,
+        max_output_tokens: int,
+        sdk_client: genai.Client | None = None,
     ) -> None:
         self._models = models
+        # The SDK closes its shared HTTP connection when the client object that owns it is garbage
+        # collected. Holding only `client.aio.models` let that happen at a random later moment,
+        # and the first real request then failed with "Cannot send a request, as the client has
+        # been closed".
+        self._sdk_client = sdk_client
         self._max_output_tokens = max_output_tokens
         self.name = model
         self._timeout_ms = int(timeout_seconds * 1000)  # the SDK takes milliseconds
+
+    async def aclose(self) -> None:
+        """Close the SDK's connections (at app shutdown)."""
+        if self._sdk_client is not None:
+            await self._sdk_client.aio.aclose()
+            self._sdk_client.close()
 
     async def classify(self, ticket: TicketText, categories: Sequence[CategoryOption]) -> object:
         prompt = build_prompt(ticket, categories)
@@ -85,5 +101,6 @@ def build_triage_model(settings: Settings) -> TriageModel:
         settings.gemini_model,
         settings.ai_timeout_seconds,
         settings.ai_max_output_tokens,
+        sdk_client=client,
     )
     return BudgetedTriageModel(gemini, settings.ai_calls_per_minute)

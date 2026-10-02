@@ -46,6 +46,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if task is not None:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+    runner = app.state.triage_runner
+    if runner is not None:
+        await runner.aclose()
     database: Database | None = app.state.database
     if database is not None:
         await database.dispose()

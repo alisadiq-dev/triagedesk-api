@@ -1,9 +1,13 @@
 import uuid
 
 import httpx2
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from app.ai.interface import TriageModel
+from app.api.deps import ensure_triage_runner
+from app.core.config import Settings
+from app.main import create_app
 from app.models import Category, Profile, Ticket
 from app.models.enums import AiStatus, Priority, Role, TicketStatus
 from tests.support.ai import ScriptedModel, good_answer
@@ -126,3 +130,24 @@ async def test_hostile_ticket_text_sent_through_the_api_cannot_change_roles_or_o
     profile = await world.session.get(Profile, world.ids["customer"])
     assert profile is not None
     assert profile.role == Role.CUSTOMER
+
+
+class ClosableModel(ScriptedModel):
+    closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+async def test_the_model_is_closed_when_the_app_shuts_down(fresh_database_url: str) -> None:
+    model = ClosableModel(good_answer(None))
+    settings = Settings(
+        _env_file=None, database_url=SecretStr(fresh_database_url), ai_recovery_enabled=False
+    )
+    app = create_app(settings, triage_model=model)
+
+    async with app.router.lifespan_context(app):
+        ensure_triage_runner(app)  # built lazily on first use, as in production
+        assert model.closed is False
+
+    assert model.closed is True
