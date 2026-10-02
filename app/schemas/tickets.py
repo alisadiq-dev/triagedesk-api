@@ -1,9 +1,9 @@
 import enum
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 
 from app.models import Ticket
 from app.models.enums import (
@@ -39,6 +39,27 @@ class TicketCreate(BaseModel):
 
     title: Title
     description: Description
+
+
+class TicketOverrides(BaseModel):
+    """Human overrides of the AI-set fields. Only these two fields can change after creation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    category_id: int | None = None
+    priority: Priority | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_value(self) -> Self:
+        if self.category_id is None and self.priority is None:
+            raise ValueError("provide category_id or priority")
+        return self
+
+
+class AssigneeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assignee_id: uuid.UUID
 
 
 class CustomerTicket(BaseModel):

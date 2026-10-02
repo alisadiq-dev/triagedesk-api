@@ -4,14 +4,28 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Ticket
-from app.models.enums import EventType, Priority, Role, TicketStatus
-from app.repositories.config import SlaPolicyRepository
+from app.models.enums import (
+    CategorySource,
+    EventType,
+    Priority,
+    PrioritySource,
+    Role,
+    TicketStatus,
+)
+from app.repositories.config import CategoryRepository, SlaPolicyRepository
 from app.repositories.events import EventRepository
+from app.repositories.profiles import ProfileRepository
 from app.repositories.tickets import TicketRepository, TicketRow
 from app.schemas.common import PageParams
-from app.schemas.tickets import CUSTOMER_SORTS, TicketCreate, TicketSort
-from app.services.errors import InputError, NotFoundError
-from app.services.permissions import Actor, require_role
+from app.schemas.tickets import CUSTOMER_SORTS, TicketCreate, TicketOverrides, TicketSort
+from app.services.errors import (
+    AlreadyAssignedError,
+    ConflictError,
+    InputError,
+    NotFoundError,
+    TicketClosedError,
+)
+from app.services.permissions import Actor, ForbiddenError, require_role
 from app.services.sla import compute_deadlines, policy_for
 from app.services.visibility import ticket_visibility
 
@@ -23,6 +37,8 @@ class TicketService:
         self._tickets = TicketRepository(session)
         self._events = EventRepository(session)
         self._policies = SlaPolicyRepository(session)
+        self._categories = CategoryRepository(session)
+        self._profiles = ProfileRepository(session)
 
     async def create(self, data: TicketCreate) -> Ticket:
         require_role(self._actor, Role.CUSTOMER)
@@ -60,3 +76,91 @@ class TicketService:
         return await self._tickets.list_page(
             ticket_visibility(self._actor), status, sort, page.offset, page.page_size
         )
+
+    # --- changes by staff ---------------------------------------------------------------------
+
+    async def update_overrides(self, ticket_id: uuid.UUID, data: TicketOverrides) -> TicketRow:
+        ticket = await self._ticket_for_staff_change(ticket_id)
+        if data.category_id is not None and data.category_id != ticket.category_id:
+            category = await self._categories.get(data.category_id)
+            if category is None or not category.is_active:
+                raise InputError("category_id is not an active category")
+            self._events.add(
+                ticket.id, self._actor.id, EventType.CATEGORY_CHANGED,
+                _text(ticket.category_id), str(category.id),
+            )  # fmt: skip
+            ticket.category_id = category.id
+            ticket.category_source = CategorySource.HUMAN
+        if data.priority is not None and data.priority != ticket.priority:
+            policy = await policy_for(self._policies, data.priority)
+            ticket.first_response_due_at, ticket.resolution_due_at = compute_deadlines(
+                policy, ticket.created_at
+            )
+            self._events.add(
+                ticket.id, self._actor.id, EventType.PRIORITY_CHANGED,
+                ticket.priority.value, data.priority.value,
+            )  # fmt: skip
+            ticket.priority = data.priority
+            ticket.priority_source = PrioritySource.HUMAN
+        await self._session.commit()
+        return await self.get(ticket_id)
+
+    async def claim(self, ticket_id: uuid.UUID) -> TicketRow:
+        ticket, _ = await self.get(ticket_id)
+        if self._actor.role == Role.CUSTOMER:
+            raise ForbiddenError("You do not have permission to do this")
+        if ticket.status == TicketStatus.CLOSED:
+            raise TicketClosedError
+        if not await self._tickets.claim(ticket_id, self._actor.id):
+            current = await self._tickets.get_plain(ticket_id)
+            if current is not None and current.status == TicketStatus.CLOSED:
+                raise TicketClosedError
+            raise AlreadyAssignedError
+        self._events.add(ticket_id, self._actor.id, EventType.ASSIGNED, None, str(self._actor.id))
+        await self._session.commit()
+        return await self.get(ticket_id)
+
+    async def release(self, ticket_id: uuid.UUID) -> TicketRow:
+        ticket = await self._ticket_for_staff_change(ticket_id)
+        previous_assignee = ticket.assignee_id  # the UPDATE below also clears the loaded object
+        if previous_assignee is None:
+            return await self.get(ticket_id)  # nothing to release
+        if not await self._tickets.release(ticket_id, previous_assignee):
+            raise ConflictError("The ticket assignment changed; try again")
+        self._events.add(
+            ticket_id, self._actor.id, EventType.RELEASED, str(previous_assignee), None
+        )
+        await self._session.commit()
+        return await self.get(ticket_id)
+
+    async def assign(self, ticket_id: uuid.UUID, assignee_id: uuid.UUID) -> TicketRow:
+        ticket, _ = await self.get(ticket_id)
+        require_role(self._actor, Role.ADMIN)
+        if ticket.status == TicketStatus.CLOSED:
+            raise TicketClosedError
+        assignee = await self._profiles.get(assignee_id)
+        if assignee is None or assignee.role not in (Role.AGENT, Role.ADMIN):
+            raise InputError("assignee_id must be an agent or an admin")
+        if ticket.assignee_id != assignee.id:
+            self._events.add(
+                ticket_id, self._actor.id, EventType.ASSIGNED,
+                _text(ticket.assignee_id), str(assignee.id),
+            )  # fmt: skip
+            ticket.assignee_id = assignee.id
+            await self._session.commit()
+        return await self.get(ticket_id)
+
+    async def _ticket_for_staff_change(self, ticket_id: uuid.UUID) -> Ticket:
+        """404 if invisible, 403 if not allowed to change it, 409 if closed (in that order)."""
+        ticket, _ = await self.get(ticket_id)
+        if self._actor.role == Role.CUSTOMER:
+            raise ForbiddenError("You do not have permission to do this")
+        if self._actor.role == Role.AGENT and ticket.assignee_id != self._actor.id:
+            raise ForbiddenError("Claim the ticket first; only the assignee can change it")
+        if ticket.status == TicketStatus.CLOSED:
+            raise TicketClosedError
+        return ticket
+
+
+def _text(value: object) -> str | None:
+    return None if value is None else str(value)

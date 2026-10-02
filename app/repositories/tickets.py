@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ColumnElement, exists, func, select
+from sqlalchemy import ColumnElement, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Profile, Ticket
@@ -65,3 +65,35 @@ class TicketRepository:
         )
         rows = (await self._session.execute(query)).all()
         return [(row[0], row[1]) for row in rows], total or 0
+
+    async def get_plain(self, ticket_id: uuid.UUID) -> Ticket | None:
+        """Load a ticket without any visibility rule (for resolving a lost race)."""
+        return await self._session.get(Ticket, ticket_id, populate_existing=True)
+
+    async def claim(self, ticket_id: uuid.UUID, assignee_id: uuid.UUID) -> bool:
+        """Atomic: only succeeds while the ticket is unassigned and not closed."""
+        result = await self._session.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.assignee_id.is_(None),
+                Ticket.status != TicketStatus.CLOSED,
+            )
+            .values(assignee_id=assignee_id)
+            .returning(Ticket.id)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def release(self, ticket_id: uuid.UUID, current_assignee_id: uuid.UUID) -> bool:
+        """Atomic: only succeeds if the ticket is still held by the expected assignee."""
+        result = await self._session.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.assignee_id == current_assignee_id,
+                Ticket.status != TicketStatus.CLOSED,
+            )
+            .values(assignee_id=None)
+            .returning(Ticket.id)
+        )
+        return result.scalar_one_or_none() is not None

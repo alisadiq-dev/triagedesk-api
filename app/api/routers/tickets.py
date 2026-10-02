@@ -8,9 +8,11 @@ from app.api.deps import get_actor, get_session
 from app.models.enums import Role, TicketStatus
 from app.schemas.common import Page, PageParamsDep
 from app.schemas.tickets import (
+    AssigneeUpdate,
     CustomerTicket,
     StaffTicket,
     TicketCreate,
+    TicketOverrides,
     TicketSort,
     render_ticket,
 )
@@ -61,4 +63,32 @@ async def list_tickets(
 @router.get("/{ticket_id}", response_model=None)
 async def get_ticket(ticket_id: uuid.UUID, actor: ActorDep, service: Service) -> CustomerTicket:
     ticket, email = await service.get(ticket_id)
+    return render_ticket(actor.role, ticket, email)
+
+
+@router.patch("/{ticket_id}", response_model=None)
+async def update_ticket(
+    ticket_id: uuid.UUID, body: TicketOverrides, actor: ActorDep, service: Service
+) -> CustomerTicket:
+    ticket, email = await service.update_overrides(ticket_id, body)
+    return render_ticket(actor.role, ticket, email)
+
+
+@router.post("/{ticket_id}/claim", response_model=None)
+async def claim_ticket(ticket_id: uuid.UUID, actor: ActorDep, service: Service) -> CustomerTicket:
+    ticket, email = await service.claim(ticket_id)
+    return render_ticket(actor.role, ticket, email)
+
+
+@router.post("/{ticket_id}/release", response_model=None)
+async def release_ticket(ticket_id: uuid.UUID, actor: ActorDep, service: Service) -> CustomerTicket:
+    ticket, email = await service.release(ticket_id)
+    return render_ticket(actor.role, ticket, email)
+
+
+@router.put("/{ticket_id}/assignee", response_model=None)
+async def assign_ticket(
+    ticket_id: uuid.UUID, body: AssigneeUpdate, actor: ActorDep, service: Service
+) -> CustomerTicket:
+    ticket, email = await service.assign(ticket_id, body.assignee_id)
     return render_ticket(actor.role, ticket, email)
