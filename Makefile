@@ -19,7 +19,7 @@ migrate:
 	$(BIN)alembic upgrade head
 
 seed:
-	@echo "make seed: available from Phase 1 (no tables to seed yet)."
+	$(BIN)python -m app.seed
 
 audit:
 	$(BIN)pip-audit -r requirements-dev.txt --no-deps --disable-pip

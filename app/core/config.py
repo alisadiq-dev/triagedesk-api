@@ -1,3 +1,4 @@
+import uuid
 from functools import lru_cache
 
 from pydantic import Field, SecretStr
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=5, ge=0)
     db_pool_timeout_seconds: int = Field(default=10, gt=0)
     db_pool_recycle_seconds: int = Field(default=1800, gt=0)
+    bootstrap_admin_sub: uuid.UUID | None = None
 
 
 @lru_cache

@@ -23,5 +23,13 @@ jobs:
         run: make lint BIN=
       - name: Tests with coverage (real Postgres 17 in Docker)
         run: make test BIN=
+      - name: Migrations apply to a fresh Postgres (upgrade, downgrade, upgrade)
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:55432/triagedesk_fresh
+        run: |
+          docker compose exec -T test-db psql -U postgres -c 'CREATE DATABASE triagedesk_fresh'
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
       - name: Dependency audit
         run: make audit BIN=
